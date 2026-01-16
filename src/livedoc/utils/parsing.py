@@ -11,6 +11,7 @@ def parse_decision(response: str) -> Optional[Decision]:
     """Parse plain-text decision using regex.
 
     Expected format: "action: ADD, topic: server outage, section: Timeline"
+    Also handles markdown formatting like: "action: **ADD**, topic: **"topic"**"
 
     Args:
         response: Raw LLM response text.
@@ -18,9 +19,16 @@ def parse_decision(response: str) -> Optional[Decision]:
     Returns:
         Decision object or None if parsing failed.
     """
+    # Clean up markdown formatting from LLM response
+    # Remove bold markers (**), quotes, and other common formatting
+    cleaned = response
+    cleaned = re.sub(r'\*\*', '', cleaned)  # Remove ** bold markers
+    cleaned = re.sub(r'["\'`]', '', cleaned)  # Remove quotes and backticks
+    cleaned = re.sub(r'\s+', ' ', cleaned)  # Normalize whitespace
+
     # Primary pattern
     pattern = r'action:\s*(ADD|UPDATE|SKIP)\s*,\s*topic:\s*([^,]+)\s*,\s*section:\s*(.+)'
-    match = re.search(pattern, response, re.IGNORECASE)
+    match = re.search(pattern, cleaned, re.IGNORECASE)
 
     if match:
         return Decision(
@@ -29,13 +37,25 @@ def parse_decision(response: str) -> Optional[Decision]:
             section=match.group(3).strip(),
         )
 
-    # Fallback: try to extract just the action
-    action_match = re.search(r'action:\s*(ADD|UPDATE|SKIP)', response, re.IGNORECASE)
+    # Fallback: try to extract just the action (also check original response)
+    action_match = re.search(r'action:\s*\*?\*?(ADD|UPDATE|SKIP)\*?\*?', response, re.IGNORECASE)
     if action_match:
+        # Try to extract topic and section with looser patterns
+        topic = "unknown"
+        section = "Timeline"
+
+        topic_match = re.search(r'topic:\s*\*?\*?["\']?([^,\n*"\']+)', response, re.IGNORECASE)
+        if topic_match:
+            topic = topic_match.group(1).strip()
+
+        section_match = re.search(r'section:\s*\*?\*?["\']?([^\n*"\']+)', response, re.IGNORECASE)
+        if section_match:
+            section = section_match.group(1).strip()
+
         return Decision(
             action=action_match.group(1).upper().strip(),
-            topic="unknown",
-            section="Timeline",  # Default section
+            topic=topic,
+            section=section,
         )
 
     return None
@@ -145,15 +165,32 @@ def generate_content_item(page_data: Dict[str, Any], topic: str) -> Optional[str
 
     # Add events with dates
     for event in page_data.get("events", [])[:2]:
-        date_str = f"({event.get('date')})" if event.get("date") else ""
-        summary = event.get("summary", "")[:150]
-        if summary:
-            parts.append(f"{date_str} {summary}".strip())
+        if isinstance(event, dict):
+            date_str = f"({event.get('date')})" if event.get("date") else ""
+            summary = event.get("summary", "")
+            if isinstance(summary, str):
+                summary = summary[:150]
+            elif isinstance(summary, dict):
+                # Handle case where summary is a dict
+                summary = str(summary.get("text", summary.get("value", str(summary))))[:150]
+            else:
+                summary = str(summary)[:150]
+            if summary:
+                parts.append(f"{date_str} {summary}".strip())
+        elif isinstance(event, str):
+            parts.append(event[:150])
 
     # Add key facts if no events
     if not parts:
         for fact in page_data.get("key_facts", [])[:2]:
-            parts.append(fact[:150])
+            if isinstance(fact, str):
+                parts.append(fact[:150])
+            elif isinstance(fact, dict):
+                # Handle case where fact is a dict
+                fact_str = fact.get("text", fact.get("value", fact.get("fact", str(fact))))
+                parts.append(str(fact_str)[:150])
+            else:
+                parts.append(str(fact)[:150])
 
     if parts:
         return "; ".join(parts)

@@ -301,7 +301,7 @@ sections:
 ### 1. Image Extraction Module
 
 ```python
-# extract.py - Core extraction logic
+# src/livedoc/stages/extract.py - Core extraction logic
 
 import json
 import ollama
@@ -350,7 +350,7 @@ Rules:
 ### 2. LiveDoc Manager (Simplified Decision Output)
 
 ```python
-# livedoc.py - Sequential document builder with regex-parsed decisions
+# src/livedoc/stages/integrate.py - Sequential document builder with regex-parsed decisions
 
 import re
 import ollama
@@ -514,7 +514,7 @@ action: [ADD/UPDATE/SKIP], topic: [brief topic], section: [section name]
 ### 3. Smart Compression (Token-Aware, Chunked)
 
 ```python
-# compression.py - Intelligent word limit management
+# src/livedoc/stages/compress.py - Intelligent word limit management
 
 import re
 from typing import List, Set
@@ -718,7 +718,7 @@ def calculate_section_budgets(
 ### 4. Perspective Rewriter (Dual Mode)
 
 ```python
-# perspective.py - Section-level and global perspective rewriting
+# src/livedoc/stages/perspective.py - Section-level and global perspective rewriting
 
 import yaml
 import ollama
@@ -950,7 +950,7 @@ Write the complete rewritten report in markdown format."""
 ### 5. CLI Entry Point
 
 ```python
-# main.py - Command line interface
+# src/livedoc/cli.py - Command line interface
 
 import argparse
 from pathlib import Path
@@ -1018,17 +1018,17 @@ if __name__ == "__main__":
 
 ```bash
 # Basic report generation
-python main.py ./documents --format ./format.md --max-words 1500
+python -m livedoc ./documents --format ./format.md --max-words 1500
 
 # Mode B: Global engineering perspective
-python main.py ./documents --format ./format.md --perspective engineering
+python -m livedoc ./documents --format ./format.md --perspective engineering
 
-# Mode A: Section-level perspective control  
-python main.py ./documents --format ./format.md \
+# Mode A: Section-level perspective control
+python -m livedoc ./documents --format ./format.md \
   --perspective-sections ./perspectives/engineering_sections.yaml
 
 # With debug output (saves extraction JSONs)
-python main.py ./documents --format ./format.md --debug
+python -m livedoc ./documents --format ./format.md --debug
 ```
 ```
 
@@ -1073,8 +1073,12 @@ python main.py ./documents --format ./format.md --debug
    choco install poppler
    ```
 
-4. **Install Python dependencies**:
+4. **Install the package**:
    ```bash
+   # Install in development mode (recommended)
+   pip install -e .
+
+   # Or install dependencies only
    pip install -r requirements.txt
    ```
 
@@ -1102,7 +1106,7 @@ Place your PDFs in `input/documents/` and create your `format.md` specification.
 Generate a report from all PDFs in a directory with default settings:
 
 ```bash
-python main.py ./documents \
+python -m livedoc ./documents \
   --format ./format.md \
   --max-words 1500 \
   --output ./output
@@ -1119,7 +1123,7 @@ python main.py ./documents \
 Apply a unified engineering voice across the entire report:
 
 ```bash
-python main.py ./documents \
+python -m livedoc ./documents \
   --format ./format.md \
   --max-words 1500 \
   --perspective engineering \
@@ -1138,7 +1142,7 @@ python main.py ./documents \
 Apply different emphasis and goals to each section independently:
 
 ```bash
-python main.py ./documents \
+python -m livedoc ./documents \
   --format ./format.md \
   --max-words 1500 \
   --perspective-sections ./perspectives/engineering_sections.yaml \
@@ -1157,7 +1161,7 @@ python main.py ./documents \
 Switch to an alternative vision-capable model:
 
 ```bash
-python main.py ./documents \
+python -m livedoc ./documents \
   --format ./format.md \
   --model llama3.2-vision:11b \
   --output ./output
@@ -1173,7 +1177,7 @@ python main.py ./documents \
 Preserve intermediate extraction results for troubleshooting:
 
 ```bash
-python main.py ./documents \
+python -m livedoc ./documents \
   --format ./format.md \
   --debug \
   --output ./output
@@ -1189,7 +1193,7 @@ python main.py ./documents \
 For collections with many PDFs (50+ pages total):
 
 ```bash
-python main.py ./documents \
+python -m livedoc ./documents \
   --format ./format.md \
   --max-words 2000 \
   --dpi 100 \
@@ -1250,31 +1254,31 @@ python main.py ./documents \
 **Incident Post-Mortem:**
 ```bash
 # 1. Process all incident-related docs
-python main.py ./incident_docs --format ./formats/postmortem.md --debug
+python -m livedoc ./incident_docs --format ./formats/postmortem.md --debug
 
 # 2. Review debug output, adjust format if needed
 
 # 3. Generate engineering-focused version
-python main.py ./incident_docs --format ./formats/postmortem.md \
+python -m livedoc ./incident_docs --format ./formats/postmortem.md \
   --perspective engineering
 ```
 
 **Weekly Status Report:**
 ```bash
 # Process week's communications with tight word limit
-python main.py ./weekly_docs --format ./formats/status.md \
+python -m livedoc ./weekly_docs --format ./formats/status.md \
   --max-words 800 --perspective-sections ./perspectives/exec_summary.yaml
 ```
 
 **Multi-Team Report:**
 ```bash
 # Generate base report then multiple perspectives
-python main.py ./project_docs --format ./formats/project.md
+python -m livedoc ./project_docs --format ./formats/project.md
 
-python main.py ./project_docs --format ./formats/project.md \
+python -m livedoc ./project_docs --format ./formats/project.md \
   --perspective engineering
 
-python main.py ./project_docs --format ./formats/project.md \
+python -m livedoc ./project_docs --format ./formats/project.md \
   --perspective product
 ```
 
@@ -1325,14 +1329,33 @@ def _summarize_page_for_decision(self, page_data: dict) -> str:
 ## Directory Structure
 
 ```
-livedoc-reporter/
-├── main.py              # CLI entry point
-├── pipeline.py          # Orchestration
-├── extract.py           # Vision extraction
-├── livedoc.py           # LiveDoc state management
-├── compression.py       # Smart compression
-├── perspective.py       # Perspective rewriting
-├── convert.py           # PDF to image conversion
+livedoc/
+├── src/
+│   └── livedoc/
+│       ├── __init__.py
+│       ├── __main__.py      # Entry point for python -m livedoc
+│       ├── cli.py           # CLI argument parsing
+│       ├── config/
+│       │   └── settings.py  # Pipeline configuration
+│       ├── core/
+│       │   ├── context.py   # Processing context
+│       │   ├── document.py  # Document representation
+│       │   ├── pipeline.py  # Pipeline orchestration
+│       │   └── stage.py     # Stage base class
+│       ├── stages/
+│       │   ├── convert.py   # PDF to image conversion
+│       │   ├── extract.py   # Vision extraction
+│       │   ├── integrate.py # LiveDoc integration
+│       │   ├── compress.py  # Smart compression
+│       │   └── perspective.py # Perspective rewriting
+│       ├── llm/
+│       │   ├── client.py    # LLM client interface
+│       │   └── ollama.py    # Ollama implementation
+│       └── utils/
+│           ├── checkpoint.py # Checkpoint/resume support
+│           └── parsing.py   # Response parsing
+├── tests/
+├── pyproject.toml
 ├── requirements.txt
 └── README.md
 ```

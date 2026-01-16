@@ -174,7 +174,42 @@ class ExtractStage(PipelineStage):
             if "summary" not in event:
                 return False
 
+        # Validate that string-list fields contain strings (not dicts)
+        string_list_fields = ["entities", "topics", "dates_mentioned", "key_facts"]
+        for field in string_list_fields:
+            for item in extraction.get(field, []):
+                if not isinstance(item, str):
+                    # Try to convert dicts to strings
+                    extraction[field] = self._normalize_string_list(extraction[field])
+                    break
+
         return True
+
+    def _normalize_string_list(self, items: List[Any]) -> List[str]:
+        """Convert list items to strings if they are dicts or other types.
+
+        Args:
+            items: List that may contain non-string items.
+
+        Returns:
+            List with all items converted to strings.
+        """
+        result = []
+        for item in items:
+            if isinstance(item, str):
+                result.append(item)
+            elif isinstance(item, dict):
+                # Try common keys that might contain the string value
+                for key in ["text", "value", "name", "fact", "topic", "entity", "date"]:
+                    if key in item and isinstance(item[key], str):
+                        result.append(item[key])
+                        break
+                else:
+                    # Fallback: convert dict to string representation
+                    result.append(str(item))
+            else:
+                result.append(str(item))
+        return result
 
     def _save_debug_json(self, context: PipelineContext) -> None:
         """Save extraction JSONs for debugging.

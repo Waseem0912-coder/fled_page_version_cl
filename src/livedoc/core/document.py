@@ -59,10 +59,12 @@ class LiveDocument:
         Returns:
             Total word count across all sections.
         """
-        return sum(
-            len(" ".join(items).split())
-            for items in self.sections.values()
-        )
+        total = 0
+        for items in self.sections.values():
+            # Ensure all items are strings before joining
+            string_items = [str(item) if not isinstance(item, str) else item for item in items]
+            total += len(" ".join(string_items).split())
+        return total
 
     def needs_compression(self, threshold: float = 0.85) -> bool:
         """Check if document is over the compression threshold.
@@ -103,19 +105,32 @@ class LiveDocument:
             page_data: Extraction dict from a page.
         """
         for event in page_data.get("events", []):
-            if event.get("date"):
-                self.tracked_dates.add(event["date"])
-            for actor in event.get("actors", []):
-                self.tracked_entities.add(actor)
+            if isinstance(event, dict):
+                if event.get("date"):
+                    self.tracked_dates.add(str(event["date"]))
+                for actor in event.get("actors", []):
+                    if isinstance(actor, str):
+                        self.tracked_entities.add(actor)
+                    elif actor:
+                        self.tracked_entities.add(str(actor))
 
         for entity in page_data.get("entities", []):
-            self.tracked_entities.add(entity)
+            if isinstance(entity, str):
+                self.tracked_entities.add(entity)
+            elif entity:
+                self.tracked_entities.add(str(entity))
 
         for date in page_data.get("dates_mentioned", []):
-            self.tracked_dates.add(date)
+            if isinstance(date, str):
+                self.tracked_dates.add(date)
+            elif date:
+                self.tracked_dates.add(str(date))
 
         for topic in page_data.get("topics", []):
-            self.tracked_topics.add(topic)
+            if isinstance(topic, str):
+                self.tracked_topics.add(topic)
+            elif topic:
+                self.tracked_topics.add(str(topic))
 
     def find_related_item(self, section: str, topic: str) -> Optional[int]:
         """Find index of most related item in a section.
@@ -136,7 +151,9 @@ class LiveDocument:
         best_idx = None
 
         for idx, item in enumerate(items):
-            item_words = set(item.lower().split())
+            # Ensure item is a string
+            item_str = str(item) if not isinstance(item, str) else item
+            item_words = set(item_str.lower().split())
             overlap = len(topic_words & item_words)
             if overlap > best_score:
                 best_score = overlap
@@ -174,7 +191,10 @@ class LiveDocument:
         for section, items in self.sections.items():
             if items:
                 # Only show first line of each item to save tokens
-                previews = [item.split('.')[0][:80] for item in items[:5]]
+                previews = []
+                for item in items[:5]:
+                    item_str = str(item) if not isinstance(item, str) else item
+                    previews.append(item_str.split('.')[0][:80])
                 lines.append(f"[{section}]: {len(items)} items - {', '.join(previews)}")
         return "\n".join(lines) if lines else "(empty document)"
 
@@ -192,7 +212,9 @@ class LiveDocument:
             if section_name in self.sections and self.sections[section_name]:
                 lines.append(f"## {section_name}\n")
                 for item in self.sections[section_name]:
-                    lines.append(f"- {item}")
+                    # Ensure item is a string
+                    item_str = str(item) if not isinstance(item, str) else item
+                    lines.append(f"- {item_str}")
                 lines.append("")
 
         return "\n".join(lines)

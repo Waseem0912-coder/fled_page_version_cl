@@ -154,7 +154,11 @@ class CompressStage(PipelineStage):
             chunk = items[i:i + config.chunk_size]
 
             # Check if chunk even needs compression
-            chunk_words = sum(len(item.split()) for item in chunk)
+            # Ensure all items are strings for word counting
+            chunk_words = sum(
+                len((str(item) if not isinstance(item, str) else item).split())
+                for item in chunk
+            )
             if chunk_words < 50:
                 compressed_items.extend(chunk)
                 continue
@@ -194,8 +198,10 @@ class CompressStage(PipelineStage):
         for term in protected_terms:
             term_lower = term.lower()
             for item in items:
-                if term_lower in item.lower():
-                    sources[term] = item
+                # Ensure item is a string
+                item_str = str(item) if not isinstance(item, str) else item
+                if term_lower in item_str.lower():
+                    sources[term] = item_str
                     break
         return sources
 
@@ -242,7 +248,9 @@ class CompressStage(PipelineStage):
         Returns:
             Compressed items.
         """
-        chunk_text = "\n".join(f"- {item}" for item in chunk)
+        # Ensure all items are strings
+        string_chunk = [str(item) if not isinstance(item, str) else item for item in chunk]
+        chunk_text = "\n".join(f"- {item}" for item in string_chunk)
 
         # Estimate if we're within token budget
         prompt_estimate = len(chunk_text) + len(protected_terms) + 600
@@ -359,7 +367,9 @@ class CompressStage(PipelineStage):
             # Identify items that can be dropped (no dates)
             droppable_indices = []
             for idx, item in enumerate(items):
-                item_lower = item.lower()
+                # Ensure item is a string
+                item_str = str(item) if not isinstance(item, str) else item
+                item_lower = item_str.lower()
                 has_date = any(
                     date.lower() in item_lower or
                     date.replace("-", "/").lower() in item_lower
@@ -374,13 +384,17 @@ class CompressStage(PipelineStage):
                 if dropped_words >= words_to_drop:
                     break
                 item = items[idx]
-                dropped_words += len(item.split())
+                # Ensure item is a string
+                item_str = str(item) if not isinstance(item, str) else item
+                dropped_words += len(item_str.split())
                 items_to_remove.append(idx)
 
             # Remove items (in reverse order to preserve indices)
             for idx in sorted(items_to_remove, reverse=True):
                 removed = items.pop(idx)
-                print(f"    Dropped from {section_name}: {removed[:50]}...")
+                # Ensure removed is a string
+                removed_str = str(removed) if not isinstance(removed, str) else removed
+                print(f"    Dropped from {section_name}: {removed_str[:50]}...")
 
             if dropped_words >= words_to_drop:
                 break
