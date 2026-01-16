@@ -1,0 +1,12 @@
+{tailored_prompt}
+
+SECTION CONTENT:
+{content}
+
+{word_constraint}{format_note}
+
+CRITICAL: Keep all dates exactly as written. Keep all names exactly as written.
+
+Rewrite the content. Output as a list with one item per line starting with dash:
+- rewritten item 1
+- rewritten item 2

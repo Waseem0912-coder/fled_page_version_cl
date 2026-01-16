@@ -1,0 +1,18 @@
+Compress these report items while keeping all protected terms.
+
+ITEMS TO COMPRESS:
+{items}
+
+{protected_terms}
+
+COMPRESSION RULES:
+1. NEVER change or remove dates - copy exactly as written
+2. NEVER change entity/person names - copy exactly
+3. Merge items about the same event into one
+4. Remove filler words (very, really, basically, etc.)
+5. Keep technical terms and error codes
+6. Each output item should be 8-25 words
+
+Write compressed items as a simple list, one per line starting with dash:
+- compressed item 1
+- compressed item 2

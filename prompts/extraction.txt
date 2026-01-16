@@ -1,0 +1,23 @@
+Analyze this document page and extract structured information.
+
+Return ONLY valid JSON with this exact structure:
+{
+  "events": [
+    {
+      "date": "YYYY-MM-DD or null if unknown",
+      "type": "incident|decision|communication|action|other",
+      "summary": "One sentence description",
+      "actors": ["person or team names involved"]
+    }
+  ],
+  "entities": ["Named systems, services, people, organizations"],
+  "topics": ["Key themes: infrastructure, security, communication, etc"],
+  "dates_mentioned": ["All dates found, any format"],
+  "key_facts": ["Important standalone facts not tied to events"]
+}
+
+Rules:
+- Extract ALL dates visible, even partial ones
+- Preserve exact names and terminology
+- One event per distinct occurrence
+- If page is mostly blank or illegible, return empty arrays

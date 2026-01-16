@@ -1,0 +1,17 @@
+Create a rewrite prompt for the "{section_name}" section.
+
+USER'S GOAL: {goal}
+
+VOICE: {voice}
+TERMINOLOGY: {terminology}
+
+EMPHASIZE these aspects: {emphasize}
+DE-EMPHASIZE these aspects: {de_emphasize}
+
+Write a clear, direct prompt (3-5 sentences) that I'll use to rewrite the section.
+The prompt should:
+- Be specific about what to highlight
+- Specify the tone/voice
+- Give concrete guidance on what to change
+
+Write only the prompt, nothing else.

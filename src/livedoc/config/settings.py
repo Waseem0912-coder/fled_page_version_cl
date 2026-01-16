@@ -1,0 +1,101 @@
+"""Configuration dataclasses for the pipeline."""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional
+
+
+@dataclass
+class CompressionConfig:
+    """Configuration for content compression behavior.
+
+    Attributes:
+        target_reduction: Target reduction ratio (0.30 = 30% reduction).
+        min_words_per_item: Minimum words per item after compression.
+        max_prompt_tokens: Maximum tokens for compression prompts.
+        chunk_size: Number of items to process at a time.
+    """
+
+    target_reduction: float = 0.30
+    min_words_per_item: int = 8
+    max_prompt_tokens: int = 1500
+    chunk_size: int = 5
+
+
+@dataclass
+class SectionGoal:
+    """Configuration for rewriting a specific section.
+
+    Attributes:
+        goal: The rewriting goal/objective for this section.
+        emphasize: List of aspects to emphasize.
+        de_emphasize: List of aspects to de-emphasize.
+        max_words: Optional word limit for the section.
+        preserve_format: Whether to preserve the original structure.
+        expand: Whether to expand content rather than compress.
+    """
+
+    goal: str
+    emphasize: List[str] = field(default_factory=list)
+    de_emphasize: List[str] = field(default_factory=list)
+    max_words: Optional[int] = None
+    preserve_format: bool = False
+    expand: bool = False
+
+
+@dataclass
+class PerspectiveConfig:
+    """Configuration for perspective rewriting.
+
+    Attributes:
+        voice: Writing voice (e.g., "Professional", "Technical", "Casual").
+        terminology: Terminology style (e.g., "Standard", "Formal", "Simplified").
+        sections: Per-section rewriting goals.
+    """
+
+    voice: str = "Professional"
+    terminology: str = "Standard"
+    sections: Dict[str, SectionGoal] = field(default_factory=dict)
+
+
+@dataclass
+class PipelineConfig:
+    """Main configuration for the pipeline.
+
+    Attributes:
+        format_spec_path: Path to format.md specification file.
+        max_words: Maximum words in final report.
+        model: LLM model name (e.g., "ministral-3-14b").
+        dpi: Image conversion DPI quality.
+        debug: Whether to save debug artifacts.
+        resume: Whether to resume from checkpoint.
+        compression: Compression behavior configuration.
+        compression_threshold: Word budget percentage that triggers compression.
+    """
+
+    format_spec_path: Path
+    max_words: int = 1500
+    model: str = "ministral-3-14b"
+    dpi: int = 150
+    debug: bool = False
+    resume: bool = False
+    compression: CompressionConfig = field(default_factory=CompressionConfig)
+    compression_threshold: float = 0.85
+
+    # Default sections if not specified in format.md
+    default_sections: List[str] = field(default_factory=lambda: [
+        "Executive Summary",
+        "Timeline",
+        "Root Cause Analysis",
+        "Impact Assessment",
+        "Action Items",
+    ])
+
+    # Section weight defaults for compression budgeting
+    default_section_weights: Dict[str, float] = field(default_factory=lambda: {
+        "Executive Summary": 0.10,
+        "Timeline": 0.35,
+        "Root Cause Analysis": 0.25,
+        "Impact Assessment": 0.15,
+        "Action Items": 0.15,
+    })

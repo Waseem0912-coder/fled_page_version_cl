@@ -1,0 +1,16 @@
+Rewrite this report from a specific perspective.
+
+PERSPECTIVE GUIDE:
+{perspective_config}
+
+CURRENT REPORT:
+{current_doc}
+
+RULES:
+- Keep ALL dates exactly as written
+- Keep ALL entity/person names exactly as written
+- Adjust emphasis and framing per the perspective guide
+- Match the voice and terminology specified
+- Stay within {max_words} words total
+
+Write the complete rewritten report in markdown format.

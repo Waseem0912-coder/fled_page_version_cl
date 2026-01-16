@@ -1,0 +1,79 @@
+"""Pipeline context for shared state between stages."""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from livedoc.config.settings import PipelineConfig
+    from livedoc.core.document import LiveDocument
+    from livedoc.llm.client import LLMClient
+
+
+@dataclass
+class PipelineContext:
+    """Shared state passed between pipeline stages.
+
+    This dataclass holds all the configuration and runtime state
+    that stages need to access and modify during pipeline execution.
+
+    Attributes:
+        input_dir: Directory containing input PDF files.
+        output_dir: Directory for output files.
+        config: Pipeline configuration settings.
+        llm_client: LLM client for model interactions.
+
+        image_paths: List of converted page images (populated by ConvertStage).
+        extractions: List of extracted data dicts (populated by ExtractStage).
+        document: LiveDocument being built (populated by IntegrateStage).
+
+        checkpoint: Checkpoint data for resume support.
+        last_processed_page: Index of last successfully processed page.
+        resumed: Whether this run was resumed from checkpoint.
+    """
+
+    # Required configuration
+    input_dir: Path
+    output_dir: Path
+    config: "PipelineConfig"
+    llm_client: "LLMClient"
+
+    # Runtime state (populated by stages)
+    image_paths: List[Path] = field(default_factory=list)
+    extractions: List[Dict[str, Any]] = field(default_factory=list)
+    document: Optional["LiveDocument"] = None
+    format_spec: Dict[str, Any] = field(default_factory=dict)
+
+    # Checkpoint support
+    checkpoint: Dict[str, Any] = field(default_factory=dict)
+    last_processed_page: int = 0
+    resumed: bool = False
+
+    # Perspective rewriting (optional)
+    perspective_path: Optional[Path] = None
+    perspective_sections_path: Optional[Path] = None
+
+    # Debug and metadata
+    debug: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def image_dir(self) -> Path:
+        """Directory for storing converted page images."""
+        return self.output_dir / ".images"
+
+    @property
+    def checkpoint_path(self) -> Path:
+        """Path to checkpoint file."""
+        return self.output_dir / "checkpoint.json"
+
+    @property
+    def report_path(self) -> Path:
+        """Path to output report file."""
+        return self.output_dir / "report.md"
+
+    def get_extraction_dir(self) -> Path:
+        """Get directory for debug extraction JSONs."""
+        extraction_dir = self.output_dir / "extraction"
+        extraction_dir.mkdir(parents=True, exist_ok=True)
+        return extraction_dir

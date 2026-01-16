@@ -1,0 +1,17 @@
+New information extracted from document page:
+---
+{page_summary}
+---
+
+Current report sections:
+{compact_state}
+
+Available sections: {sections}
+
+What should I do with this new information?
+Reply with EXACTLY this format on one line:
+action: [ADD/UPDATE/SKIP], topic: [brief topic], section: [section name]
+
+- ADD = new information not in report
+- UPDATE = extends or corrects existing entry
+- SKIP = redundant or not relevant
