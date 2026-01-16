@@ -1034,9 +1034,72 @@ python main.py ./documents --format ./format.md --debug
 
 ---
 
+## Prerequisites & Setup
+
+### System Requirements
+
+- **Python**: 3.10 or higher
+- **Ollama**: Latest version installed and running
+- **Poppler**: Required for PDF to image conversion
+- **Disk Space**: ~500MB for model + temporary image files
+
+### Installation
+
+1. **Install Ollama** (if not already installed):
+   ```bash
+   # macOS
+   brew install ollama
+
+   # Linux
+   curl -fsSL https://ollama.com/install.sh | sh
+   ```
+
+2. **Pull the required model**:
+   ```bash
+   ollama pull ministral-3-14b
+   # Or alternative vision models:
+   ollama pull llama3.2-vision:11b
+   ```
+
+3. **Install Poppler for PDF conversion**:
+   ```bash
+   # macOS
+   brew install poppler
+
+   # Ubuntu/Debian
+   sudo apt-get install poppler-utils
+
+   # Windows (via chocolatey)
+   choco install poppler
+   ```
+
+4. **Install Python dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+5. **Verify Ollama is running**:
+   ```bash
+   ollama list  # Should show your downloaded models
+   ```
+
+### Directory Setup
+
+Create the expected input structure before running:
+
+```bash
+mkdir -p input/documents input/perspectives output
+```
+
+Place your PDFs in `input/documents/` and create your `format.md` specification.
+
+---
+
 ## Usage Examples
 
 ### Basic Report Generation
+
+Generate a report from all PDFs in a directory with default settings:
 
 ```bash
 python main.py ./documents \
@@ -1045,7 +1108,15 @@ python main.py ./documents \
   --output ./output
 ```
 
+**What this does:**
+- Converts all PDFs in `./documents` to images at 150 DPI
+- Extracts structured information from each page using vision model
+- Builds a LiveDoc by processing pages sequentially
+- Outputs `report.md` to the specified output directory
+
 ### Mode B: Global Engineering Perspective
+
+Apply a unified engineering voice across the entire report:
 
 ```bash
 python main.py ./documents \
@@ -1055,7 +1126,16 @@ python main.py ./documents \
   --output ./output
 ```
 
+**When to use Mode B:**
+- You want consistent tone/voice throughout
+- The perspective applies equally to all sections
+- You have a simple rewrite requirement
+
+**Output:** Creates both `report.md` (original) and `report_engineering.md` (rewritten).
+
 ### Mode A: Section-Level Perspective Control
+
+Apply different emphasis and goals to each section independently:
 
 ```bash
 python main.py ./documents \
@@ -1065,7 +1145,16 @@ python main.py ./documents \
   --output ./output
 ```
 
+**When to use Mode A:**
+- Different sections need different treatment
+- You want fine-grained control over emphasis
+- Some sections should expand while others compress
+
+**Example:** Timeline keeps all dates but Root Cause Analysis gets expanded with technical details.
+
 ### Using Different Model
+
+Switch to an alternative vision-capable model:
 
 ```bash
 python main.py ./documents \
@@ -1074,13 +1163,119 @@ python main.py ./documents \
   --output ./output
 ```
 
+**Model selection tips:**
+- `ministral-3-14b`: Best balance of quality and speed (recommended)
+- `llama3.2-vision:11b`: Smaller, faster, but less accurate
+- Larger models (32B+) may exceed VRAM on most GPUs
+
 ### Debug Mode (Saves Extraction JSONs)
+
+Preserve intermediate extraction results for troubleshooting:
 
 ```bash
 python main.py ./documents \
   --format ./format.md \
   --debug \
   --output ./output
+```
+
+**Debug output includes:**
+- `output/extraction/doc_001_page_001.json` - Raw extraction per page
+- `output/extraction/decisions.log` - ADD/UPDATE/SKIP decisions
+- `output/extraction/compression.log` - Compression operations
+
+### Processing Large Document Sets
+
+For collections with many PDFs (50+ pages total):
+
+```bash
+python main.py ./documents \
+  --format ./format.md \
+  --max-words 2000 \
+  --dpi 100 \
+  --output ./output
+```
+
+**Tips for large sets:**
+- Increase `--max-words` to capture more detail
+- Lower `--dpi` (100 instead of 150) to reduce token cost per page
+- Use `--debug` on first run to verify extraction quality
+
+---
+
+## Best Practices
+
+### Document Preparation
+
+1. **Organize input PDFs logically**: Name files with prefixes to control processing order (e.g., `01_incident_report.pdf`, `02_email_thread.pdf`)
+
+2. **Remove irrelevant pages**: Pre-filter PDFs to exclude cover pages, blank pages, or appendices that don't contain useful information
+
+3. **Ensure readable quality**: Scanned documents should be at least 150 DPI; blurry or low-contrast pages will produce poor extractions
+
+### Format Specification
+
+1. **Be explicit about section structure**: The model follows your `format.md` closely—include all sections you want in the output
+
+2. **Set appropriate word limits per section**: Use `section_weights` in format spec to allocate budget where it matters most
+
+3. **Include example entries**: Adding 1-2 example entries in format.md helps the model understand expected style
+
+### Perspective Configuration
+
+1. **Start with Mode B (global)**: Test with a simple global perspective before creating complex section-level configs
+
+2. **Use specific terminology lists**: In perspective configs, list exact terms to use/avoid rather than general guidance
+
+3. **Test incrementally**: Run with `--debug` and inspect `decisions.log` to see how the model interprets your perspective
+
+### Performance Optimization
+
+1. **Batch similar documents**: Process related PDFs together so the LiveDoc can effectively deduplicate
+
+2. **Tune compression thresholds**: If output is too sparse, increase `max_words`; if too verbose, lower it
+
+3. **Monitor VRAM usage**: Run `nvidia-smi` in another terminal to ensure model fits in memory
+
+### Quality Assurance
+
+1. **Always use debug mode on first run**: Verify extractions look correct before processing full sets
+
+2. **Check date preservation**: Dates are critical—compare output against source to ensure none were lost
+
+3. **Validate entity names**: Named entities should appear exactly as in source documents
+
+### Common Workflows
+
+**Incident Post-Mortem:**
+```bash
+# 1. Process all incident-related docs
+python main.py ./incident_docs --format ./formats/postmortem.md --debug
+
+# 2. Review debug output, adjust format if needed
+
+# 3. Generate engineering-focused version
+python main.py ./incident_docs --format ./formats/postmortem.md \
+  --perspective engineering
+```
+
+**Weekly Status Report:**
+```bash
+# Process week's communications with tight word limit
+python main.py ./weekly_docs --format ./formats/status.md \
+  --max-words 800 --perspective-sections ./perspectives/exec_summary.yaml
+```
+
+**Multi-Team Report:**
+```bash
+# Generate base report then multiple perspectives
+python main.py ./project_docs --format ./formats/project.md
+
+python main.py ./project_docs --format ./formats/project.md \
+  --perspective engineering
+
+python main.py ./project_docs --format ./formats/project.md \
+  --perspective product
 ```
 
 ---
