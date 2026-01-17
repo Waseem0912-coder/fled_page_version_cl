@@ -61,16 +61,37 @@ def parse_decision(response: str) -> Optional[Decision]:
     return None
 
 
-def parse_format_spec(format_path: Path, default_max_words: int = 1500) -> Dict[str, Any]:
+def parse_format_spec(format_path: Optional[Path], default_max_words: int = 1500) -> Dict[str, Any]:
     """Parse format.md to extract structure specification.
 
     Args:
-        format_path: Path to format.md file.
+        format_path: Path to format.md file (can be None for defaults).
         default_max_words: Default word limit if not specified.
 
     Returns:
         Dictionary with title, max_words, sections, section_order.
     """
+    # Return defaults if no format path provided
+    if format_path is None:
+        return {
+            "title": "Report",
+            "max_words": default_max_words,
+            "sections": [
+                "Executive Summary",
+                "Timeline",
+                "Root Cause Analysis",
+                "Impact Assessment",
+                "Action Items",
+            ],
+            "section_order": [
+                "Executive Summary",
+                "Timeline",
+                "Root Cause Analysis",
+                "Impact Assessment",
+                "Action Items",
+            ],
+        }
+
     content = format_path.read_text()
 
     spec: Dict[str, Any] = {
