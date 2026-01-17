@@ -1,5 +1,6 @@
 """Finalize stage - generates the final report from consolidated extractions."""
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -11,6 +12,7 @@ from livedoc.config.settings import (
     estimate_tokens,
     CHARS_PER_TOKEN,
 )
+from livedoc.utils.date_event import DateEventManager, EnrichedEvent
 
 
 # Importance-grouped finalize prompt template
@@ -151,13 +153,19 @@ class FinalizeStage(PipelineStage):
         seen_facts: set = set()
 
         for ext in extractions:
-            # Process events by importance
+            # Process events by importance with semantic deduplication
             for event in ext.get("events", []):
                 if isinstance(event, dict):
                     summary = event.get("summary", "")
-                    if not summary or self._get_signature(summary) in seen_events:
+                    date = event.get("date", "")
+                    if not summary:
                         continue
-                    seen_events.add(self._get_signature(summary))
+
+                    # Use semantic signature with date context for deduplication
+                    signature = self._get_signature(summary, date)
+                    if signature in seen_events:
+                        continue
+                    seen_events.add(signature)
 
                     importance = event.get("importance", 2)
                     item = self._format_event(event)
@@ -212,16 +220,36 @@ class FinalizeStage(PipelineStage):
 
         return critical, high, medium, tables, visuals
 
-    def _get_signature(self, text: str) -> str:
-        """Get a signature for deduplication.
+    def _get_signature(self, text: str, date: str = "") -> str:
+        """Get a semantic signature for deduplication.
+
+        Uses key terms and date instead of simple prefix matching to avoid
+        incorrectly merging distinct events that happen to share a prefix.
 
         Args:
             text: Text to get signature for.
+            date: Optional date for additional context.
 
         Returns:
-            Lowercase first 50 chars as signature.
+            Semantic signature based on key terms.
         """
-        return text.lower()[:50]
+        # Stop words to filter out
+        stop_words = {
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+            'of', 'with', 'by', 'from', 'was', 'were', 'is', 'are', 'been', 'be',
+            'has', 'have', 'had', 'this', 'that', 'these', 'those', 'it', 'its',
+        }
+
+        # Extract key terms
+        import re
+        words = re.findall(r'\b[a-zA-Z]+\b', text.lower())
+        key_terms = [w for w in words if w not in stop_words and len(w) > 2]
+        key_terms = sorted(set(key_terms))[:6]  # Limit to 6 key terms
+
+        # Include date prefix if available
+        date_prefix = date[:10] if date else ""
+
+        return f"{date_prefix}|{','.join(key_terms)}"
 
     def _format_event(self, event: Dict[str, Any]) -> str:
         """Format an event for the prompt.

@@ -111,7 +111,9 @@ class PipelineConfig:
         format_spec_path: Path to format.md specification file (legacy).
         user_preferences_path: Path to user preferences txt file.
         max_words: Maximum words in final report.
-        model: LLM model name (e.g., "ministral-3-14b").
+        model: LLM model name (e.g., "ministral-3-14b"). Used as default for both vision and text.
+        vision_model: LLM model for vision/extraction tasks. If None, uses 'model'.
+        text_model: LLM model for text processing tasks. If None, uses 'model'.
         dpi: Image conversion DPI quality.
         debug: Whether to save debug artifacts.
         resume: Whether to resume from checkpoint.
@@ -124,6 +126,8 @@ class PipelineConfig:
     user_preferences_path: Optional[Path] = None
     max_words: int = 1500
     model: str = "ministral-3-14b"
+    vision_model: Optional[str] = None  # If None, uses 'model'
+    text_model: Optional[str] = None    # If None, uses 'model'
     dpi: int = 150
     debug: bool = False
     resume: bool = False
@@ -148,3 +152,19 @@ class PipelineConfig:
         "Impact Assessment": 0.15,
         "Action Items": 0.15,
     })
+
+    def get_vision_model(self) -> str:
+        """Get the model to use for vision/extraction tasks.
+
+        Returns:
+            Vision model name, falling back to default model if not specified.
+        """
+        return self.vision_model or self.model
+
+    def get_text_model(self) -> str:
+        """Get the model to use for text processing tasks.
+
+        Returns:
+            Text model name, falling back to default model if not specified.
+        """
+        return self.text_model or self.model

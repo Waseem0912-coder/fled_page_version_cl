@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from livedoc.core.document import Decision
+from livedoc.utils.date_event import sort_events_by_importance
 
 
 def parse_decision(response: str) -> Optional[Decision]:
@@ -155,7 +156,8 @@ def summarize_page_for_decision(page_data: Dict[str, Any]) -> str:
     parts = []
 
     if page_data.get("events"):
-        events = page_data["events"][:3]  # Limit to 3 events
+        # Sort by importance and take top 5 instead of truncating to first 3
+        events = sort_events_by_importance(page_data["events"], max_count=5)
         for e in events:
             date_str = e.get('date', 'no date')
             summary = e.get('summary', '')[:100]
@@ -184,8 +186,9 @@ def generate_content_item(page_data: Dict[str, Any], topic: str) -> Optional[str
     """
     parts = []
 
-    # Add events with dates
-    for event in page_data.get("events", [])[:2]:
+    # Add events with dates - sort by importance and take top 5
+    sorted_events = sort_events_by_importance(page_data.get("events", []), max_count=5)
+    for event in sorted_events:
         if isinstance(event, dict):
             date_str = f"({event.get('date')})" if event.get("date") else ""
             summary = event.get("summary", "")

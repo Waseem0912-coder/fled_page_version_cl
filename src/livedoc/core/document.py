@@ -6,6 +6,8 @@ Contains the document state that is built incrementally from page extractions.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
+from livedoc.utils.date_event import DateEventManager
+
 
 @dataclass
 class Decision:
@@ -101,36 +103,68 @@ class LiveDocument:
     def track_protected_items(self, page_data: Dict[str, Any]) -> None:
         """Track dates and entities that must survive compression.
 
+        Handles both 'dates' and 'dates_mentioned' fields, normalizing
+        all dates for consistent matching during compression.
+
         Args:
             page_data: Extraction dict from a page.
         """
+        date_manager = DateEventManager()
+
+        # Track dates from events
         for event in page_data.get("events", []):
             if isinstance(event, dict):
                 if event.get("date"):
-                    self.tracked_dates.add(str(event["date"]))
+                    date_str = str(event["date"])
+                    self._add_normalized_date(date_manager, date_str)
                 for actor in event.get("actors", []):
                     if isinstance(actor, str):
                         self.tracked_entities.add(actor)
                     elif actor:
                         self.tracked_entities.add(str(actor))
 
+        # Track entities
         for entity in page_data.get("entities", []):
             if isinstance(entity, str):
                 self.tracked_entities.add(entity)
             elif entity:
                 self.tracked_entities.add(str(entity))
 
+        # Track dates from 'dates' field (new format)
+        for date in page_data.get("dates", []):
+            if isinstance(date, str):
+                self._add_normalized_date(date_manager, date)
+            elif date:
+                self._add_normalized_date(date_manager, str(date))
+
+        # Track dates from 'dates_mentioned' field (legacy format)
         for date in page_data.get("dates_mentioned", []):
             if isinstance(date, str):
-                self.tracked_dates.add(date)
+                self._add_normalized_date(date_manager, date)
             elif date:
-                self.tracked_dates.add(str(date))
+                self._add_normalized_date(date_manager, str(date))
 
+        # Track topics
         for topic in page_data.get("topics", []):
             if isinstance(topic, str):
                 self.tracked_topics.add(topic)
             elif topic:
                 self.tracked_topics.add(str(topic))
+
+    def _add_normalized_date(self, date_manager: DateEventManager, date_str: str) -> None:
+        """Add a date and its normalized form to tracked dates.
+
+        Args:
+            date_manager: DateEventManager instance for parsing.
+            date_str: Date string to add.
+        """
+        # Add the original
+        self.tracked_dates.add(date_str)
+
+        # Also add normalized form for matching flexibility
+        parsed = date_manager.parse_date(date_str)
+        if parsed and parsed.normalized and parsed.normalized != date_str:
+            self.tracked_dates.add(parsed.normalized)
 
     def find_related_item(self, section: str, topic: str) -> Optional[int]:
         """Find index of most related item in a section.

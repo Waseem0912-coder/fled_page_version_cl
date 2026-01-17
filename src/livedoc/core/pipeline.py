@@ -45,17 +45,37 @@ class Pipeline:
         config: PipelineConfig,
         stages: Optional[List[PipelineStage]] = None,
         llm_client: Optional[LLMClient] = None,
+        vision_client: Optional[LLMClient] = None,
     ):
         """Initialize the pipeline.
 
         Args:
             config: Pipeline configuration.
             stages: Optional list of stages to execute.
-            llm_client: Optional LLM client (defaults to OllamaClient).
+            llm_client: Optional LLM client for text tasks (defaults to OllamaClient).
+            vision_client: Optional LLM client for vision tasks (defaults to llm_client).
         """
         self.config = config
         self.stages: List[PipelineStage] = stages or []
-        self.llm_client = llm_client or OllamaClient(model=config.model)
+
+        # Create text client (for text processing tasks)
+        text_model = config.get_text_model()
+        self.llm_client = llm_client or OllamaClient(model=text_model)
+
+        # Create vision client (for extraction tasks)
+        vision_model = config.get_vision_model()
+        if vision_client:
+            self.vision_client = vision_client
+        elif vision_model == text_model:
+            # Share the same client if models are the same
+            self.vision_client = self.llm_client
+        else:
+            # Create separate client for vision tasks
+            self.vision_client = OllamaClient(model=vision_model)
+
+        # Log model configuration
+        if vision_model != text_model:
+            print(f"Using dual models: vision={vision_model}, text={text_model}")
 
     def add_stage(self, stage: PipelineStage) -> "Pipeline":
         """Add a stage to the pipeline.
@@ -103,12 +123,13 @@ class Pipeline:
         )
         print(f"Loaded format spec: {format_spec.get('title', 'Untitled')}")
 
-        # Create context
+        # Create context with both text and vision clients
         context = PipelineContext(
             input_dir=input_dir,
             output_dir=output_dir,
             config=self.config,
             llm_client=self.llm_client,
+            vision_client=self.vision_client,
             format_spec=format_spec,
             debug=self.config.debug,
             perspective_path=perspective_path,

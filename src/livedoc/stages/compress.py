@@ -1,6 +1,7 @@
 """Compression stage - smart consolidation while preserving critical info."""
 
-from typing import Any, Dict, List, Set
+import re
+from typing import Any, Dict, List, Set, Tuple
 
 from livedoc.core.stage import PipelineStage
 from livedoc.core.context import PipelineContext
@@ -10,6 +11,7 @@ from livedoc.config.settings import (
     estimate_tokens,
 )
 from livedoc.utils.parsing import parse_list_response
+from livedoc.utils.date_event import DateEventManager
 
 
 # Concise, effective compression prompt
@@ -21,12 +23,16 @@ ITEMS:
 PROTECTED (must appear in output):
 {protected}
 
+{sequence_hint}
+
 RULES:
 1. Merge related items into single sentences
 2. Keep ALL dates and names exactly as written
 3. Remove redundancy and filler words
 4. Output 3-8 consolidated items
 5. Each item: 15-40 words, factual, complete
+6. PRESERVE chronological order when events have dates
+7. DO NOT merge events with different dates into one item
 
 Output as a dash-prefixed list:
 - consolidated item 1
@@ -171,10 +177,10 @@ class CompressStage(PipelineStage):
         if len(group) <= 2:
             return group
 
-        # Find which protected items are in this group
-        group_text = " ".join(str(g) for g in group).lower()
-        relevant_dates = [d for d in dates if d.lower() in group_text]
-        relevant_entities = [e for e in entities if e.lower() in group_text]
+        # Find which protected items are in this group using word-boundary matching
+        group_text = " ".join(str(g) for g in group)
+        relevant_dates = self._find_matching_items(dates, group_text)
+        relevant_entities = self._find_matching_items(entities, group_text)
 
         protected = []
         if relevant_dates:
@@ -183,11 +189,18 @@ class CompressStage(PipelineStage):
             protected.append(f"Names: {', '.join(relevant_entities[:5])}")
         protected_str = "\n".join(protected) if protected else "None specified"
 
+        # Detect event sequences and build hint
+        sequence_hint = self._detect_event_sequence(group)
+
         # Build prompt
         items_str = "\n".join(f"- {str(item)}" for item in group)
 
         # Check token budget
-        prompt = CONSOLIDATE_PROMPT.format(items=items_str, protected=protected_str)
+        prompt = CONSOLIDATE_PROMPT.format(
+            items=items_str,
+            protected=protected_str,
+            sequence_hint=sequence_hint,
+        )
         if estimate_tokens(prompt) > TOKEN_BUDGET_CONTENT:
             # Split group in half and process separately
             mid = len(group) // 2
@@ -206,8 +219,76 @@ class CompressStage(PipelineStage):
         # Fallback: return original
         return group
 
+    def _find_matching_items(self, items: Set[str], text: str) -> List[str]:
+        """Find items that match in text using word-boundary regex.
+
+        Uses word-boundary matching instead of simple substring matching
+        to avoid false positives (e.g., "Jan" matching "January" in wrong context).
+
+        Args:
+            items: Set of items to find.
+            text: Text to search in.
+
+        Returns:
+            List of matching items.
+        """
+        matches = []
+        for item in items:
+            # Escape special regex characters and create word-boundary pattern
+            escaped = re.escape(str(item))
+            # Use word boundaries for alphanumeric items, but be flexible for dates
+            if re.search(r'^\d', item):
+                # For dates, use looser matching (allow surrounding punctuation)
+                pattern = rf'(?:^|[\s,;:\[\(]){escaped}(?:[\s,;:\]\)]|$)'
+            else:
+                # For names/entities, use word boundaries
+                pattern = rf'\b{escaped}\b'
+
+            if re.search(pattern, text, re.IGNORECASE):
+                matches.append(item)
+
+        return matches
+
+    def _detect_event_sequence(self, group: List[str]) -> str:
+        """Detect if the group contains a sequence of chronological events.
+
+        Extracts dates from items and determines if they form a sequence
+        that should be preserved.
+
+        Args:
+            group: List of items to analyze.
+
+        Returns:
+            Hint string for the consolidation prompt.
+        """
+        date_manager = DateEventManager()
+        dated_items: List[Tuple[str, str]] = []  # (date, item)
+
+        for item in group:
+            item_str = str(item)
+            # Look for date patterns in brackets like [2023-01-15]
+            bracket_match = re.search(r'\[(\d{4}-\d{2}-\d{2}[^\]]*)\]', item_str)
+            if bracket_match:
+                date_str = bracket_match.group(1)
+                dated_items.append((date_str, item_str))
+            else:
+                # Try to find any date in the item
+                dates = date_manager.extract_all_dates(item_str)
+                if dates:
+                    dated_items.append((dates[0].normalized, item_str))
+
+        if len(dated_items) >= 2:
+            # Check if dates are different (indicating a sequence)
+            unique_dates = set(d[0][:10] for d in dated_items)
+            if len(unique_dates) > 1:
+                return "EVENT SEQUENCE DETECTED: These items contain different dates and represent a chronological sequence. Keep them separate."
+
+        return ""
+
     def _verify_protected(self, context: PipelineContext) -> None:
         """Verify protected items survived and restore if needed.
+
+        Uses word-boundary matching for more accurate detection.
 
         Args:
             context: Pipeline context.
@@ -215,17 +296,32 @@ class CompressStage(PipelineStage):
         if not context.document:
             return
 
-        # Get all current text
+        # Get all current text (preserve case for matching)
         all_text = " ".join(
             " ".join(str(item) for item in items)
             for items in context.document.sections.values()
-        ).lower()
+        )
 
-        # Check dates
+        # Check dates using word-boundary matching
         missing_dates = []
+        date_manager = DateEventManager()
         for date in context.document.tracked_dates:
-            date_variants = [date.lower(), date.replace("-", "/").lower()]
-            if not any(v in all_text for v in date_variants):
+            # Get normalized variants of the date
+            parsed = date_manager.parse_date(date)
+            if parsed:
+                variants = date_manager.get_date_variants(parsed)
+            else:
+                variants = {date, date.replace("-", "/")}
+
+            # Check if any variant appears with word boundaries
+            found = False
+            for variant in variants:
+                escaped = re.escape(str(variant))
+                if re.search(rf'(?:^|[\s,;:\[\(]){escaped}(?:[\s,;:\]\)]|$)', all_text, re.IGNORECASE):
+                    found = True
+                    break
+
+            if not found:
                 missing_dates.append(date)
 
         if missing_dates:
@@ -238,6 +334,8 @@ class CompressStage(PipelineStage):
 
     def _targeted_reduction(self, context: PipelineContext, target: int) -> None:
         """Reduce word count through targeted removal.
+
+        Uses word-boundary matching for protected content detection.
 
         Args:
             context: Pipeline context.
@@ -261,14 +359,17 @@ class CompressStage(PipelineStage):
             for i, item in enumerate(items):
                 item_str = str(item) if not isinstance(item, str) else item
                 score = 0
-                item_lower = item_str.lower()
 
+                # Use word-boundary matching for dates
                 for date in context.document.tracked_dates:
-                    if date.lower() in item_lower:
+                    escaped = re.escape(str(date))
+                    if re.search(rf'(?:^|[\s,;:\[\(]){escaped}(?:[\s,;:\]\)]|$)', item_str, re.IGNORECASE):
                         score += 10
 
+                # Use word-boundary matching for entities
                 for entity in context.document.tracked_entities:
-                    if entity.lower() in item_lower:
+                    escaped = re.escape(str(entity))
+                    if re.search(rf'\b{escaped}\b', item_str, re.IGNORECASE):
                         score += 5
 
                 scored.append((i, item_str, score))

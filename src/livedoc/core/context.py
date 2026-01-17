@@ -21,7 +21,8 @@ class PipelineContext:
         input_dir: Directory containing input PDF files.
         output_dir: Directory for output files.
         config: Pipeline configuration settings.
-        llm_client: LLM client for model interactions.
+        llm_client: LLM client for text processing tasks.
+        vision_client: LLM client for vision/extraction tasks (may be same as llm_client).
 
         image_paths: List of converted page images (populated by ConvertStage).
         extractions: List of extracted data dicts (populated by ExtractStage).
@@ -36,7 +37,8 @@ class PipelineContext:
     input_dir: Path
     output_dir: Path
     config: "PipelineConfig"
-    llm_client: "LLMClient"
+    llm_client: "LLMClient"  # For text processing tasks
+    vision_client: Optional["LLMClient"] = None  # For vision/extraction tasks (defaults to llm_client)
 
     # Runtime state (populated by stages)
     image_paths: List[Path] = field(default_factory=list)

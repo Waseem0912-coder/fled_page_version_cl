@@ -1,18 +1,21 @@
 """Unified vision extraction stage - detects content types and extracts in one call."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from livedoc.core.stage import PipelineStage
 from livedoc.core.context import PipelineContext
 from livedoc.llm.client import LLMError
+from livedoc.utils.date_event import DateEventManager
 
 
 # Unified extraction prompt - detects content types AND extracts in one call
 UNIFIED_EXTRACTION_PROMPT = """Analyze this document page. First identify what content types exist, then extract each appropriately.
 
 {context_hint}
+{year_context}
 
 Return JSON:
 {{
@@ -204,10 +207,18 @@ class ExtractStage(PipelineStage):
         Returns:
             Dictionary with extracted information.
         """
-        prompt = UNIFIED_EXTRACTION_PROMPT.format(context_hint=context_hint)
+        # Add year context for partial date inference
+        year_context = f"Document year context: {datetime.now().year}. Use this year for dates that don't specify a year."
+
+        prompt = UNIFIED_EXTRACTION_PROMPT.format(
+            context_hint=context_hint,
+            year_context=year_context,
+        )
 
         try:
-            response = context.llm_client.chat(
+            # Use vision_client for image-based extraction
+            vision_client = getattr(context, 'vision_client', context.llm_client)
+            response = vision_client.chat(
                 prompt=prompt,
                 images=[image_path],
                 json_mode=True,
@@ -278,15 +289,29 @@ class ExtractStage(PipelineStage):
         # Normalize facts (can be strings or dicts)
         extraction["facts"] = self._normalize_facts(extraction.get("facts", []))
 
-        # Normalize string lists
-        for field in ["entities", "dates"]:
-            extraction[field] = self._normalize_string_list(extraction.get(field, []))
+        # Normalize entities
+        extraction["entities"] = self._normalize_string_list(extraction.get("entities", []))
+
+        # Normalize dates using DateEventManager for consistent format
+        date_manager = DateEventManager(document_year=datetime.now().year)
+        raw_dates = self._normalize_string_list(extraction.get("dates", []))
 
         # Handle backward compatibility: dates_mentioned -> dates
         if "dates_mentioned" in extraction and extraction["dates_mentioned"]:
-            extraction["dates"].extend(
-                self._normalize_string_list(extraction["dates_mentioned"])
-            )
+            raw_dates.extend(self._normalize_string_list(extraction["dates_mentioned"]))
+
+        # Normalize and deduplicate dates
+        normalized_dates = []
+        seen_normalized = set()
+        for date_str in raw_dates:
+            parsed = date_manager.parse_date(date_str)
+            if parsed:
+                # Keep both original and normalized for matching flexibility
+                if parsed.normalized not in seen_normalized:
+                    seen_normalized.add(parsed.normalized)
+                    normalized_dates.append(parsed.normalized)
+
+        extraction["dates"] = normalized_dates
 
         # Handle backward compatibility: key_facts -> facts
         if "key_facts" in extraction and extraction["key_facts"]:
@@ -375,7 +400,7 @@ class ExtractStage(PipelineStage):
         return normalized
 
     def _normalize_events(self, events: Any) -> List[Dict[str, Any]]:
-        """Normalize event data.
+        """Normalize event data using DateEventManager.
 
         Args:
             events: Raw events data.
@@ -385,6 +410,9 @@ class ExtractStage(PipelineStage):
         """
         if not isinstance(events, list):
             return []
+
+        # Initialize DateEventManager with current year context
+        date_manager = DateEventManager(document_year=datetime.now().year)
 
         normalized = []
         for event in events:
@@ -396,8 +424,15 @@ class ExtractStage(PipelineStage):
             if not summary:
                 continue
 
+            # Normalize date using DateEventManager
+            date_str = event.get("date")
+            normalized_date = None
+            if date_str:
+                parsed_date = date_manager.parse_date(str(date_str))
+                normalized_date = parsed_date.normalized if parsed_date else date_str
+
             normalized.append({
-                "date": event.get("date"),
+                "date": normalized_date,
                 "type": str(event.get("type", "other")),
                 "summary": str(summary),
                 "actors": self._normalize_string_list(event.get("actors", [])),

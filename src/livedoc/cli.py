@@ -87,6 +87,20 @@ Examples:
     )
 
     parser.add_argument(
+        "--vision-model",
+        type=str,
+        default=None,
+        help="Ollama model for vision/extraction tasks (default: same as --model)"
+    )
+
+    parser.add_argument(
+        "--text-model",
+        type=str,
+        default=None,
+        help="Ollama model for text processing tasks (default: same as --model)"
+    )
+
+    parser.add_argument(
         "--dpi",
         type=int,
         default=150,
@@ -164,6 +178,8 @@ Examples:
         user_preferences_path=user_preferences_path,
         max_words=args.max_words,
         model=args.model,
+        vision_model=args.vision_model,
+        text_model=args.text_model,
         dpi=args.dpi,
         debug=args.debug,
         resume=args.resume,

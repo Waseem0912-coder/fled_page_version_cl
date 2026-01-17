@@ -18,6 +18,8 @@ This system processes multiple PDFs (issue trackers, email dumps, chat logs, int
 - **Rolling summary ("LiveDoc")**: Builds document incrementally to respect word limits
 - **Smart compression**: Preserves critical items (importance 3) while compressing lower-priority content
 - **Perspective rewriting**: Generate reports from different team member viewpoints
+- **Dual model support**: Use different models for vision (extraction) and text (synthesis) tasks
+- **Robust date/event preservation**: Semantic deduplication and year inference ensure no dates or events are lost
 - **Local-first**: Runs entirely on local hardware via Ollama
 
 ### Hardware Requirements
@@ -58,7 +60,7 @@ This system processes multiple PDFs (issue trackers, email dumps, chat logs, int
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                STEP 2: UNIFIED VISION EXTRACTION (Per Page)                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  Model: ministral-3-14B via Ollama                                          │
+│  Model: vision_client (--vision-model or default --model)                   │
 │  Input: Single page image + unified extraction prompt                       │
 │  Output: Structured JSON with detected content types + extractions          │
 │                                                                              │
@@ -88,6 +90,7 @@ This system processes multiple PDFs (issue trackers, email dumps, chat logs, int
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     STEP 3: SEQUENTIAL LIVEDOC BUILD                         │
 ├─────────────────────────────────────────────────────────────────────────────┤
+│  Model: llm_client (--text-model or default --model)                        │
 │  Process: For each page JSON, decide: ADD | UPDATE | SKIP | COMPRESS        │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
@@ -127,6 +130,7 @@ This system processes multiple PDFs (issue trackers, email dumps, chat logs, int
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    STEP 4: PERSPECTIVE REWRITE (Optional)                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
+│  Model: llm_client (--text-model or default --model)                        │
 │  Trigger: --perspective engineering                                         │
 │  Input: Final LiveDoc + perspectives/engineering.md                         │
 │  Output: Rewritten report emphasizing team-specific concerns                │
@@ -1137,13 +1141,13 @@ def main():
         description="Generate reports from document collections"
     )
     parser.add_argument("input_dir", type=Path, help="Directory with PDFs")
-    parser.add_argument("--format", type=Path, required=True,
-                        help="Path to format.md specification")
+    parser.add_argument("--format", type=Path, default=None,
+                        help="Path to format.md specification (optional with new architecture)")
     parser.add_argument("--output", type=Path, default=Path("./output"),
                         help="Output directory")
     parser.add_argument("--max-words", type=int, default=1500,
                         help="Maximum words in final report")
-    
+
     # Perspective options (mutually exclusive)
     perspective_group = parser.add_mutually_exclusive_group()
     perspective_group.add_argument(
@@ -1154,38 +1158,44 @@ def main():
         "--perspective-sections", type=Path, default=None,
         help="Mode A: Section-level perspective (path to YAML config)"
     )
-    
+
+    # Model configuration
     parser.add_argument("--model", type=str, default="ministral-3-14b",
-                        help="Ollama model to use")
+                        help="Default Ollama model for all tasks")
+    parser.add_argument("--vision-model", type=str, default=None,
+                        help="Ollama model for vision/extraction tasks (default: same as --model)")
+    parser.add_argument("--text-model", type=str, default=None,
+                        help="Ollama model for text processing tasks (default: same as --model)")
+
     parser.add_argument("--dpi", type=int, default=150,
                         help="Image conversion DPI")
     parser.add_argument("--debug", action="store_true",
                         help="Save intermediate extraction JSONs")
-    
+    parser.add_argument("--legacy", action="store_true",
+                        help="Use legacy architecture (integrate->compress->perspective)")
+
     args = parser.parse_args()
-    
-    # Pipeline execution
-    pipeline = ReportPipeline(
-        input_dir=args.input_dir,
-        format_spec=args.format,
-        output_dir=args.output,
+
+    # Create configuration with model settings
+    config = PipelineConfig(
+        format_spec_path=args.format,
         max_words=args.max_words,
         model=args.model,
+        vision_model=args.vision_model,
+        text_model=args.text_model,
         dpi=args.dpi,
-        debug=args.debug
+        debug=args.debug,
+        use_finalize_stage=not args.legacy,
     )
-    
-    pipeline.run()
-    
-    # Apply perspective if requested
-    if args.perspective:
-        # Mode B: Global perspective
-        perspective_path = args.input_dir / "perspectives" / f"{args.perspective}.md"
-        pipeline.apply_global_perspective(perspective_path)
-        
-    elif args.perspective_sections:
-        # Mode A: Section-level perspective
-        pipeline.apply_section_perspective(args.perspective_sections)
+
+    # Create and run pipeline
+    pipeline = Pipeline.create_default(config)
+    pipeline.run(
+        input_dir=args.input_dir,
+        output_dir=args.output,
+        perspective_path=perspective_path,
+        perspective_sections_path=perspective_sections_path,
+    )
 
 if __name__ == "__main__":
     main()
@@ -1194,7 +1204,10 @@ if __name__ == "__main__":
 **Usage Examples:**
 
 ```bash
-# Basic report generation
+# Basic report generation (new architecture - no format required)
+python -m livedoc ./documents --max-words 1500
+
+# With format specification
 python -m livedoc ./documents --format ./format.md --max-words 1500
 
 # Mode B: Global engineering perspective
@@ -1204,9 +1217,16 @@ python -m livedoc ./documents --format ./format.md --perspective engineering
 python -m livedoc ./documents --format ./format.md \
   --perspective-sections ./perspectives/engineering_sections.yaml
 
+# Dual model configuration
+python -m livedoc ./documents \
+  --vision-model llama3.2-vision:11b \
+  --text-model mistral
+
 # With debug output (saves extraction JSONs)
 python -m livedoc ./documents --format ./format.md --debug
-```
+
+# Legacy mode (requires --format)
+python -m livedoc ./documents --format ./format.md --legacy
 ```
 
 ---
@@ -1333,7 +1353,7 @@ python -m livedoc ./documents \
 
 **Example:** Timeline keeps all dates but Root Cause Analysis gets expanded with technical details.
 
-### Using Different Model
+### Using Different Models
 
 Switch to an alternative vision-capable model:
 
@@ -1348,6 +1368,49 @@ python -m livedoc ./documents \
 - `ministral-3-14b`: Best balance of quality and speed (recommended)
 - `llama3.2-vision:11b`: Smaller, faster, but less accurate
 - Larger models (32B+) may exceed VRAM on most GPUs
+
+### Dual Model Configuration
+
+Use separate models for vision (extraction) and text (synthesis) tasks:
+
+```bash
+# Use a vision-specialized model for extraction, text model for synthesis
+python -m livedoc ./documents \
+  --vision-model llama3.2-vision:11b \
+  --text-model mistral \
+  --output ./output
+```
+
+**When to use dual models:**
+- Vision model excels at image understanding but slower at text
+- Text model is faster/better at synthesis and rewriting
+- Optimize cost by using smaller text model for non-vision tasks
+
+**CLI Arguments:**
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--model` | Default model for all tasks | `ministral-3-14b` |
+| `--vision-model` | Model for extraction (overrides --model) | Same as --model |
+| `--text-model` | Model for text processing (overrides --model) | Same as --model |
+
+**Architecture:**
+```
+                    ┌─────────────────────────────────────┐
+  --vision-model ──▶│ ExtractStage (vision_client)        │
+                    │ - PDF page image analysis           │
+                    │ - Content type detection            │
+                    │ - Structured data extraction        │
+                    └─────────────────────────────────────┘
+
+                    ┌─────────────────────────────────────┐
+  --text-model ────▶│ Text Stages (llm_client)            │
+                    │ - FinalizeStage (synthesis)         │
+                    │ - CompressStage (compression)       │
+                    │ - PerspectiveStage (rewriting)      │
+                    └─────────────────────────────────────┘
+```
+
+If only `--model` is specified, both clients use the same model (backward compatible).
 
 ### Debug Mode (Saves Extraction JSONs)
 
@@ -1536,11 +1599,83 @@ livedoc/
 │       │   └── ollama.py    # Ollama implementation
 │       └── utils/
 │           ├── checkpoint.py # Checkpoint/resume support
+│           ├── date_event.py # Date normalization and event deduplication
 │           └── parsing.py   # Response parsing
 ├── tests/
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
+```
+
+---
+
+## Date and Event Preservation
+
+The pipeline includes robust mechanisms to ensure dates and events are never lost during compression or rewriting.
+
+### DateEventManager
+
+The `DateEventManager` class (`src/livedoc/utils/date_event.py`) provides:
+
+**Date Parsing and Normalization:**
+- Parses multiple date formats: ISO (`2024-03-15`), US (`03/15/2024`), EU (`15-03-2024`), natural language (`March 15, 2024`)
+- Normalizes all dates to ISO format for consistent matching
+- Infers missing years from document context
+
+**Event Deduplication:**
+- Uses semantic signatures instead of naive prefix matching
+- Extracts key terms (excluding stop words) to identify unique events
+- Prevents loss of distinct events that share similar prefixes
+
+**Example:**
+```python
+from livedoc.utils.date_event import DateEventManager
+
+manager = DateEventManager(document_year=2024)
+
+# Parse various date formats
+parsed = manager.parse_date("March 15")  # Infers year from context
+print(parsed.normalized)  # "2024-03-15"
+
+# Enrich events with normalized dates
+event = {"date": "3/15/24", "summary": "Server outage detected"}
+enriched = manager.enrich_event(event)
+print(enriched.normalized_date)  # "2024-03-15"
+```
+
+### Protected Items During Compression
+
+The compression stage uses word-boundary regex matching to preserve:
+
+| Item Type | Protection Level | Example |
+|-----------|------------------|---------|
+| Dates | Never removed | `2024-03-15`, `March 15` |
+| Entity names | Never modified | `AWS`, `nginx`, `John Smith` |
+| Event sequences | Chronological order preserved | Events with different dates kept separate |
+
+**Validation:**
+After compression, the system validates that:
+1. All tracked dates appear in the output (exact or normalized form)
+2. Entity names are preserved verbatim
+3. No more than 20% of entities were lost (warns if exceeded)
+
+### Event Importance Sorting
+
+Events are selected by importance rather than truncated arbitrarily:
+
+```python
+from livedoc.utils.date_event import sort_events_by_importance
+
+# Events with importance scores
+events = [
+    {"summary": "Routine check", "importance": 1},
+    {"summary": "Server outage", "importance": 3},
+    {"summary": "Config change", "importance": 2},
+]
+
+# Get top 2 by importance (not just first 2)
+sorted_events = sort_events_by_importance(events, max_count=2)
+# Returns: [{"summary": "Server outage", ...}, {"summary": "Config change", ...}]
 ```
 
 ---
