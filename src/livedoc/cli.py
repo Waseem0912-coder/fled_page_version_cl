@@ -15,23 +15,23 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic report generation (new architecture - recommended)
-  python -m livedoc ./documents --format ./format.md --max-words 1500
+  # Basic report generation (new architecture - no format needed)
+  python -m livedoc ./documents --max-words 1500
 
   # With custom user preferences
-  python -m livedoc ./documents --format ./format.md --preferences ./user_preferences.txt
+  python -m livedoc ./documents --preferences ./user_preferences.txt
 
-  # Legacy mode (old integrate->compress->perspective pipeline)
+  # With format specification (optional)
+  python -m livedoc ./documents --format ./format.md
+
+  # Legacy mode (requires --format)
   python -m livedoc ./documents --format ./format.md --legacy
 
-  # Mode B: Global engineering perspective (legacy)
-  python -m livedoc ./documents --format ./format.md --perspective engineering --legacy
-
   # With debug output (saves extraction JSONs)
-  python -m livedoc ./documents --format ./format.md --debug
+  python -m livedoc ./documents --debug
 
   # Resume from checkpoint (for long documents)
-  python -m livedoc ./documents --format ./format.md --resume
+  python -m livedoc ./documents --resume
         """
     )
 
@@ -44,8 +44,8 @@ Examples:
     parser.add_argument(
         "--format",
         type=Path,
-        required=True,
-        help="Path to format.md specification file"
+        default=None,
+        help="Path to format.md specification file (optional with new architecture)"
     )
 
     parser.add_argument(
@@ -125,7 +125,12 @@ Examples:
         print(f"Error: Input directory not found: {args.input_dir}", file=sys.stderr)
         sys.exit(1)
 
-    if not args.format.exists():
+    # Format is required for legacy mode
+    if args.legacy and not args.format:
+        print("Error: --format is required when using --legacy mode", file=sys.stderr)
+        sys.exit(1)
+
+    if args.format and not args.format.exists():
         print(f"Error: Format specification not found: {args.format}", file=sys.stderr)
         sys.exit(1)
 

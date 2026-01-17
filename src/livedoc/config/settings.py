@@ -120,7 +120,7 @@ class PipelineConfig:
         use_finalize_stage: Use new finalize stage instead of perspective stage.
     """
 
-    format_spec_path: Path
+    format_spec_path: Optional[Path] = None
     user_preferences_path: Optional[Path] = None
     max_words: int = 1500
     model: str = "ministral-3-14b"
