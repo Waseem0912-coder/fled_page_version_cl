@@ -13,23 +13,16 @@ from livedoc.utils.parsing import (
 from livedoc.utils.checkpoint import CheckpointManager
 
 
-DECISION_PROMPT_TEMPLATE = """New information extracted from document page:
----
+DECISION_PROMPT_TEMPLATE = """Page content:
 {page_summary}
----
 
-Current report sections:
+Current doc:
 {compact_state}
 
-Available sections: {sections}
+Sections: {sections}
 
-What should I do with this new information?
-Reply with EXACTLY this format on one line:
-action: [ADD/UPDATE/SKIP], topic: [brief topic], section: [section name]
-
-- ADD = new information not in report
-- UPDATE = extends or corrects existing entry
-- SKIP = redundant or not relevant"""
+Respond: action: ADD|UPDATE|SKIP, topic: [brief], section: [name]
+ADD=new info, UPDATE=extends existing, SKIP=redundant"""
 
 
 class IntegrateStage(PipelineStage):

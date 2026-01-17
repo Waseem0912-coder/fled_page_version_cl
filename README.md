@@ -11,8 +11,12 @@ This system processes multiple PDFs (issue trackers, email dumps, chat logs, int
 ### Key Features
 
 - **Vision-first extraction**: Converts PDFs to images for reliable text/layout extraction
+- **Multi-content detection**: Automatically identifies tables, charts, graphs, images, and paragraphs
+- **Unified extraction**: Single LLM call detects content types AND extracts structured data
+- **Importance scoring**: All items scored 1-3 for smart compression prioritization
+- **Type-specific handling**: Tables get structured data, charts get trends, visuals get descriptions
 - **Rolling summary ("LiveDoc")**: Builds document incrementally to respect word limits
-- **Smart compression**: Preserves dates, timelines, and key facts while compressing narrative
+- **Smart compression**: Preserves critical items (importance 3) while compressing lower-priority content
 - **Perspective rewriting**: Generate reports from different team member viewpoints
 - **Local-first**: Runs entirely on local hardware via Ollama
 
@@ -52,23 +56,31 @@ This system processes multiple PDFs (issue trackers, email dumps, chat logs, int
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      STEP 2: VISION EXTRACTION (Per Page)                    │
+│                STEP 2: UNIFIED VISION EXTRACTION (Per Page)                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Model: ministral-3-14B via Ollama                                          │
-│  Input: Single page image + extraction prompt                               │
-│  Output: Structured JSON per page                                           │
+│  Input: Single page image + unified extraction prompt                       │
+│  Output: Structured JSON with detected content types + extractions          │
+│                                                                              │
+│  DETECTION: Identifies content types on each page:                          │
+│  - Tables (headers, rows, summary)                                          │
+│  - Charts/Graphs (description, trend, data points)                          │
+│  - Images/Diagrams (description, labels)                                    │
+│  - Paragraphs (events, facts, entities)                                     │
 │                                                                              │
 │  page_001.json:                                                             │
 │  {                                                                          │
-│    "source_doc": "issue_tracker.pdf",                                       │
-│    "page_num": 1,                                                           │
-│    "events": [                                                              │
-│      { "date": "2024-03-15", "type": "incident",                            │
-│        "summary": "Server outage reported", "actors": ["ops-team"] }        │
-│    ],                                                                        │
+│    "content_types": ["table", "paragraph"],                                 │
+│    "tables": [{ "headers": ["Date", "Issue"], "rows": [...],                │
+│                 "summary": "Timeline of incidents", "importance": 3 }],     │
+│    "visuals": [{ "type": "chart", "description": "Error rate over time",    │
+│                  "trend": "increasing", "importance": 2 }],                 │
+│    "events": [{ "date": "2024-03-15", "type": "incident",                   │
+│                 "summary": "Server outage", "importance": 3 }],             │
 │    "entities": ["AWS", "us-east-1", "nginx"],                               │
-│    "topics": ["infrastructure", "downtime"],                                │
-│    "raw_text_snippets": ["Critical: Load balancer timeout..."]              │
+│    "dates": ["2024-03-15"],                                                 │
+│    "facts": [{ "text": "Load balancer timeout", "importance": 2 }],         │
+│    "continues_previous": false, "continues_next": true                      │
 │  }                                                                          │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -156,7 +168,40 @@ Each page is processed independently. The model receives only the image and a st
 - Topics/entities enable smart compression (we know what's important)
 - Dates extracted explicitly are never compressed away
 
-### Step 3: LiveDoc Operations
+### Step 3: Finalize (New Architecture)
+
+When using `use_finalize_stage=True` (default), extractions are synthesized directly into the final report:
+
+| Priority Level | Content | Handling |
+|----------------|---------|----------|
+| **CRITICAL (3)** | Dates, key decisions | Never truncated, preserved exactly |
+| **HIGH (2)** | Important context | Included unless severe budget constraints |
+| **MEDIUM (1)** | Supporting details | Truncated first when over budget |
+| **TABLES** | Structured data | Summarized with key columns/rows |
+| **VISUALS** | Charts/graphs/images | Trend + description preserved |
+
+**Finalize Prompt Structure:**
+```
+CRITICAL (preserve exactly):
+- [2024-03-15] Server outage detected (ops-team)
+
+HIGH PRIORITY:
+- Load balancer timeout after 30 seconds
+
+TABLES (summarize key data):
+- Table (Date, Issue, Status, 12 rows): Timeline of incident events
+
+VISUAL INSIGHTS (charts/graphs):
+- Chart: Error rate over time - Trend: increasing
+
+SUPPORTING:
+- Routine maintenance was scheduled for next week
+
+{user_preferences}
+Target: {target_words} words.
+```
+
+### Step 3 (Legacy): LiveDoc Operations
 
 | Operation | When | What Happens |
 |-----------|------|--------------|
@@ -298,41 +343,73 @@ sections:
 
 ## Key Code Components
 
-### 1. Image Extraction Module
+### 1. Unified Extraction Module
 
 ```python
-# src/livedoc/stages/extract.py - Core extraction logic
+# src/livedoc/stages/extract.py - Unified content detection + extraction
 
 import json
 import ollama
 from pathlib import Path
 
-def extract_page(image_path: Path, model: str = "ministral-3-14b") -> dict:
-    """Extract structured information from a single page image."""
-    
-    prompt = """Analyze this document page and extract structured information.
+# Single prompt that detects content types AND extracts appropriately
+UNIFIED_EXTRACTION_PROMPT = """Analyze this document page. First identify what content types exist, then extract each appropriately.
 
-Return ONLY valid JSON with this exact structure:
+{context_hint}
+
+Return JSON:
 {
-  "events": [
-    {
-      "date": "YYYY-MM-DD or null if unknown",
-      "type": "incident|decision|communication|action|other",
-      "summary": "One sentence description",
-      "actors": ["person or team names involved"]
-    }
-  ],
-  "entities": ["Named systems, services, people, organizations"],
-  "topics": ["Key themes: infrastructure, security, communication, etc"],
-  "dates_mentioned": ["All dates found, any format"],
-  "key_facts": ["Important standalone facts not tied to events"]
+  "content_types": ["table", "chart", "graph", "image", "paragraph"],
+
+  "tables": [{
+    "headers": ["col1", "col2"],
+    "rows": [["val1", "val2"]],
+    "summary": "What this table shows",
+    "importance": 1-3
+  }],
+
+  "visuals": [{
+    "type": "chart|graph|image|diagram",
+    "description": "What it shows",
+    "data_points": ["key values/labels visible"],
+    "trend": "increasing|decreasing|stable|comparison|n/a",
+    "importance": 1-3
+  }],
+
+  "events": [{
+    "date": "YYYY-MM-DD or null",
+    "type": "incident|decision|action|other",
+    "summary": "<30 words",
+    "actors": ["names"],
+    "importance": 1-3
+  }],
+
+  "entities": ["names, systems, orgs"],
+  "dates": ["all dates found"],
+  "facts": [{"text": "<25 words", "importance": 1-3}],
+
+  "continues_previous": false,
+  "continues_next": false
 }
 
-Rules:
-- Extract ALL dates visible, even partial ones
-- Preserve exact names and terminology
-- One event per distinct occurrence
-- If page is mostly blank or illegible, return empty arrays"""
+RULES:
+- List ALL content types present on the page
+- For TABLES: Extract headers and key rows (max 10 rows)
+- For CHARTS/GRAPHS: Describe trend, extract visible data points
+- For IMAGES/DIAGRAMS: Describe what's shown, extract any labels
+- For PARAGRAPHS: Extract events with dates, actors, importance
+- Importance: 3=critical (dates, decisions), 2=high, 1=supporting
+- Preserve exact names, dates, numbers
+- Empty arrays if content type not present"""
+
+# Context hint for cross-page continuity
+CONTEXT_HINT_TEMPLATE = """Previous page context: Topics: {topics}. Key actors: {actors}.
+Check if this page continues from previous."""
+
+def extract_page(image_path: Path, context_hint: str = "", model: str = "ministral-3-14b") -> dict:
+    """Extract structured information using unified detect + extract approach."""
+
+    prompt = UNIFIED_EXTRACTION_PROMPT.format(context_hint=context_hint)
 
     response = ollama.chat(
         model=model,
@@ -343,11 +420,111 @@ Rules:
         }],
         format="json"
     )
-    
+
     return json.loads(response["message"]["content"])
 ```
 
-### 2. LiveDoc Manager (Simplified Decision Output)
+### Content Type Handling
+
+| Content Type | Extraction Strategy | Output Fields |
+|--------------|---------------------|---------------|
+| **Tables** | Headers + rows + summary | `tables[].headers, rows, summary, importance` |
+| **Charts** | Description + data points + trend | `visuals[].description, data_points, trend` |
+| **Graphs** | Same as charts | `visuals[].description, data_points, trend` |
+| **Images/Diagrams** | Description + labels | `visuals[].description, data_points` |
+| **Paragraphs** | Events + facts + entities | `events[], facts[], entities[]` |
+
+### 2. Finalize Stage (New Architecture)
+
+```python
+# src/livedoc/stages/finalize.py - Importance-grouped synthesis
+
+from typing import List, Dict, Any, Tuple
+
+# Importance-grouped finalize prompt
+FINALIZE_PROMPT = """You are an expert report writer. Synthesize this information into a coherent report.
+
+CRITICAL (preserve exactly):
+{critical}
+
+HIGH PRIORITY:
+{high}
+
+TABLES (summarize key data):
+{tables}
+
+VISUAL INSIGHTS (charts/graphs):
+{visuals}
+
+SUPPORTING:
+{medium}
+
+{preferences}
+
+RULES:
+- Use ONLY the information above - never add external knowledge
+- Preserve all dates, names, figures exactly as given
+- Write clear professional prose
+- Target: {target_words} words
+
+Write the report:"""
+
+
+class FinalizeStage:
+    """Synthesizes extractions directly into final report with importance grouping."""
+
+    def _consolidate_extractions(self, extractions: List[Dict]) -> Tuple[List, List, List, List, List]:
+        """Group all content by importance level."""
+        critical, high, medium = [], [], []
+        tables, visuals = [], []
+
+        for ext in extractions:
+            # Process events by importance (3=critical, 2=high, 1=medium)
+            for event in ext.get("events", []):
+                importance = event.get("importance", 2)
+                formatted = self._format_event(event)
+                if importance >= 3:
+                    critical.append(formatted)
+                elif importance >= 2:
+                    high.append(formatted)
+                else:
+                    medium.append(formatted)
+
+            # Process tables with summaries
+            for table in ext.get("tables", []):
+                tables.append(self._format_table(table))
+
+            # Process visuals (charts, graphs, images)
+            for visual in ext.get("visuals", []):
+                visuals.append(self._format_visual(visual))
+
+            # Process facts by importance
+            for fact in ext.get("facts", []):
+                importance = fact.get("importance", 1)
+                text = fact.get("text", "")
+                if importance >= 3:
+                    critical.append(text)
+                elif importance >= 2:
+                    high.append(text)
+                else:
+                    medium.append(text)
+
+        return critical, high, medium, tables, visuals
+
+    def _format_table(self, table: dict) -> str:
+        headers = table.get("headers", [])
+        summary = table.get("summary", "")
+        return f"Table ({', '.join(headers[:4])}): {summary}"
+
+    def _format_visual(self, visual: dict) -> str:
+        vtype = visual.get("type", "visual")
+        desc = visual.get("description", "")
+        trend = visual.get("trend", "")
+        trend_str = f" - Trend: {trend}" if trend and trend != "n/a" else ""
+        return f"{vtype.title()}: {desc}{trend_str}"
+```
+
+### 3. LiveDoc Manager (Legacy - Simplified Decision Output)
 
 ```python
 # src/livedoc/stages/integrate.py - Sequential document builder with regex-parsed decisions
@@ -511,7 +688,7 @@ action: [ADD/UPDATE/SKIP], topic: [brief topic], section: [section name]
             self.tracked_dates.add(date)
 ```
 
-### 3. Smart Compression (Token-Aware, Chunked)
+### 4. Smart Compression (Legacy - Token-Aware, Chunked)
 
 ```python
 # src/livedoc/stages/compress.py - Intelligent word limit management
@@ -715,7 +892,7 @@ def calculate_section_budgets(
     return budgets
 ```
 
-### 4. Perspective Rewriter (Dual Mode)
+### 5. Perspective Rewriter (Dual Mode)
 
 ```python
 # src/livedoc/stages/perspective.py - Section-level and global perspective rewriting
@@ -947,7 +1124,7 @@ Write the complete rewritten report in markdown format."""
         return doc[:keep_start] + "\n\n[... content trimmed ...]\n\n" + doc[-keep_end:]
 ```
 
-### 5. CLI Entry Point
+### 6. CLI Entry Point
 
 ```python
 # src/livedoc/cli.py - Command line interface
@@ -1292,10 +1469,14 @@ A 14B model has limited context window (~8K tokens typically). Every prompt must
 
 | Step | Max Input Tokens | Strategy |
 |------|------------------|----------|
-| Step 2: Extraction | ~2000 | Image + short prompt (image dominates) |
-| Step 3: Decision | ~1500 | Compact state + page summary |
-| Step 3: Compression | ~1500 | Small chunks (5 items max) |
+| Step 2: Unified Extraction | ~450 | Image + unified prompt (single call) |
+| Step 2: Context Hint | ~50 | Previous page reference (if applicable) |
+| Step 3: Finalize | ~400-600 | Importance-grouped content |
+| Step 3 (Legacy): Decision | ~1500 | Compact state + page summary |
+| Step 3 (Legacy): Compression | ~1500 | Small chunks (5 items max) |
 | Step 4: Rewrite | ~2500 | Full doc (already within word limit) |
+
+**New Architecture Efficiency**: ~450 tokens/page (single call) vs ~550 tokens (separate classify + extract).
 
 ### Safeguards in Code
 
@@ -1340,13 +1521,15 @@ livedoc/
 │       ├── core/
 │       │   ├── context.py   # Processing context
 │       │   ├── document.py  # Document representation
+│       │   ├── extraction.py # Data structures for multi-content extraction
 │       │   ├── pipeline.py  # Pipeline orchestration
 │       │   └── stage.py     # Stage base class
 │       ├── stages/
 │       │   ├── convert.py   # PDF to image conversion
-│       │   ├── extract.py   # Vision extraction
-│       │   ├── integrate.py # LiveDoc integration
-│       │   ├── compress.py  # Smart compression
+│       │   ├── extract.py   # Unified vision extraction (detect + extract)
+│       │   ├── finalize.py  # Direct synthesis with importance grouping
+│       │   ├── integrate.py # LiveDoc integration (legacy)
+│       │   ├── compress.py  # Smart compression (legacy)
 │       │   └── perspective.py # Perspective rewriting
 │       ├── llm/
 │       │   ├── client.py    # LLM client interface
@@ -1364,25 +1547,64 @@ livedoc/
 
 ## Prompts Reference
 
-### Page Extraction Prompt (JSON output - Step 2 only)
+### Unified Extraction Prompt (JSON output - Step 2)
 
 ```
-Analyze this document page and extract structured information.
+Analyze this document page. First identify what content types exist, then extract each appropriately.
 
-Return ONLY valid JSON with this exact structure:
+{context_hint}
+
+Return JSON:
 {
-  "events": [{"date": "...", "type": "...", "summary": "...", "actors": [...]}],
-  "entities": ["..."],
-  "topics": ["..."],
-  "dates_mentioned": ["..."],
-  "key_facts": ["..."]
+  "content_types": ["table", "chart", "graph", "image", "paragraph"],
+
+  "tables": [{
+    "headers": ["col1", "col2"],
+    "rows": [["val1", "val2"]],
+    "summary": "What this table shows",
+    "importance": 1-3
+  }],
+
+  "visuals": [{
+    "type": "chart|graph|image|diagram",
+    "description": "What it shows",
+    "data_points": ["key values/labels visible"],
+    "trend": "increasing|decreasing|stable|comparison|n/a",
+    "importance": 1-3
+  }],
+
+  "events": [{
+    "date": "YYYY-MM-DD or null",
+    "type": "incident|decision|action|other",
+    "summary": "<30 words",
+    "actors": ["names"],
+    "importance": 1-3
+  }],
+
+  "entities": ["names, systems, orgs"],
+  "dates": ["all dates found"],
+  "facts": [{"text": "<25 words", "importance": 1-3}],
+
+  "continues_previous": false,
+  "continues_next": false
 }
 
-Rules:
-- Extract ALL dates visible, even partial ones
-- Preserve exact names and terminology  
-- One event per distinct occurrence
-- If page is mostly blank or illegible, return empty arrays
+RULES:
+- List ALL content types present on the page
+- For TABLES: Extract headers and key rows (max 10 rows)
+- For CHARTS/GRAPHS: Describe trend, extract visible data points
+- For IMAGES/DIAGRAMS: Describe what's shown, extract any labels
+- For PARAGRAPHS: Extract events with dates, actors, importance
+- Importance: 3=critical (dates, decisions), 2=high, 1=supporting
+- Preserve exact names, dates, numbers
+- Empty arrays if content type not present
+- ONLY extract information EXPLICITLY visible - never infer or assume
+```
+
+**Context hint** (provided when previous page continues):
+```
+Previous page context: Topics: {topics}. Key actors: {actors}.
+Check if this page continues from previous.
 ```
 
 ### LiveDoc Decision Prompt (Plain text output)

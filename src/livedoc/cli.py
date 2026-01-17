@@ -15,15 +15,17 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic report generation
+  # Basic report generation (new architecture - recommended)
   python -m livedoc ./documents --format ./format.md --max-words 1500
 
-  # Mode B: Global engineering perspective
-  python -m livedoc ./documents --format ./format.md --perspective engineering
+  # With custom user preferences
+  python -m livedoc ./documents --format ./format.md --preferences ./user_preferences.txt
 
-  # Mode A: Section-level perspective control
-  python -m livedoc ./documents --format ./format.md \\
-    --perspective-sections ./perspectives/engineering_sections.yaml
+  # Legacy mode (old integrate->compress->perspective pipeline)
+  python -m livedoc ./documents --format ./format.md --legacy
+
+  # Mode B: Global engineering perspective (legacy)
+  python -m livedoc ./documents --format ./format.md --perspective engineering --legacy
 
   # With debug output (saves extraction JSONs)
   python -m livedoc ./documents --format ./format.md --debug
@@ -103,6 +105,19 @@ Examples:
         help="Resume from checkpoint if available (for long documents)"
     )
 
+    parser.add_argument(
+        "--preferences",
+        type=Path,
+        default=None,
+        help="Path to user preferences txt file (default: ./user_preferences.txt)"
+    )
+
+    parser.add_argument(
+        "--legacy",
+        action="store_true",
+        help="Use legacy architecture (integrate->compress->perspective) instead of direct synthesis"
+    )
+
     args = parser.parse_args()
 
     # Validate inputs
@@ -130,14 +145,24 @@ Examples:
             print(f"Warning: Section config not found: {perspective_sections_path}", file=sys.stderr)
             perspective_sections_path = None
 
+    # Determine user preferences path
+    user_preferences_path = args.preferences
+    if not user_preferences_path:
+        # Try default locations
+        default_prefs = Path("./user_preferences.txt")
+        if default_prefs.exists():
+            user_preferences_path = default_prefs
+
     # Create configuration
     config = PipelineConfig(
         format_spec_path=args.format,
+        user_preferences_path=user_preferences_path,
         max_words=args.max_words,
         model=args.model,
         dpi=args.dpi,
         debug=args.debug,
         resume=args.resume,
+        use_finalize_stage=not args.legacy,
     )
 
     # Create and run pipeline

@@ -5,6 +5,7 @@ from livedoc.stages.extract import ExtractStage
 from livedoc.stages.integrate import IntegrateStage
 from livedoc.stages.compress import CompressStage
 from livedoc.stages.perspective import PerspectiveStage
+from livedoc.stages.finalize import FinalizeStage
 
 __all__ = [
     "ConvertStage",
@@ -12,4 +13,5 @@ __all__ = [
     "IntegrateStage",
     "CompressStage",
     "PerspectiveStage",
+    "FinalizeStage",
 ]

@@ -5,6 +5,51 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
+# Token budget for LLM calls - based on ~5K embedding length limit
+# Reserve ~500 tokens for system instructions, ~500 for prompt template
+# Leaves ~4000 tokens for actual content input
+TOKEN_BUDGET_TOTAL = 5000
+TOKEN_BUDGET_SYSTEM = 500
+TOKEN_BUDGET_PROMPT = 500
+TOKEN_BUDGET_CONTENT = 4000
+
+# Approximate chars per token (conservative estimate)
+CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimate token count from text.
+
+    Args:
+        text: Input text to estimate.
+
+    Returns:
+        Estimated token count.
+    """
+    return len(text) // CHARS_PER_TOKEN
+
+
+def fits_token_budget(
+    content: str,
+    prompt_template: str = "",
+    system_instructions: str = "",
+    budget: int = TOKEN_BUDGET_TOTAL,
+) -> bool:
+    """Check if content fits within token budget.
+
+    Args:
+        content: Main content to check.
+        prompt_template: Prompt template (optional).
+        system_instructions: System instructions (optional).
+        budget: Total token budget.
+
+    Returns:
+        True if total fits within budget.
+    """
+    total = estimate_tokens(content + prompt_template + system_instructions)
+    return total < budget
+
+
 @dataclass
 class CompressionConfig:
     """Configuration for content compression behavior.
@@ -63,7 +108,8 @@ class PipelineConfig:
     """Main configuration for the pipeline.
 
     Attributes:
-        format_spec_path: Path to format.md specification file.
+        format_spec_path: Path to format.md specification file (legacy).
+        user_preferences_path: Path to user preferences txt file.
         max_words: Maximum words in final report.
         model: LLM model name (e.g., "ministral-3-14b").
         dpi: Image conversion DPI quality.
@@ -71,9 +117,11 @@ class PipelineConfig:
         resume: Whether to resume from checkpoint.
         compression: Compression behavior configuration.
         compression_threshold: Word budget percentage that triggers compression.
+        use_finalize_stage: Use new finalize stage instead of perspective stage.
     """
 
     format_spec_path: Path
+    user_preferences_path: Optional[Path] = None
     max_words: int = 1500
     model: str = "ministral-3-14b"
     dpi: int = 150
@@ -81,6 +129,7 @@ class PipelineConfig:
     resume: bool = False
     compression: CompressionConfig = field(default_factory=CompressionConfig)
     compression_threshold: float = 0.85
+    use_finalize_stage: bool = True  # New architecture by default
 
     # Default sections if not specified in format.md
     default_sections: List[str] = field(default_factory=lambda: [

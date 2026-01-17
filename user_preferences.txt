@@ -1,0 +1,14 @@
+# User Preferences for Report Generation
+#
+# Leave this file empty to generate a detailed executive report (~2 pages)
+# suitable for third-party stakeholders and senior leadership.
+#
+# Otherwise, describe what you want below. Examples:
+#
+# - "Technical summary for engineering team, focus on root cause and action items"
+# - "Brief executive summary, 1 paragraph, focus on business impact"
+# - "Compliance report highlighting dates, affected systems, and remediation steps"
+# - "Detailed timeline with all actors and communications"
+#
+# Your preferences (leave empty for default detailed report):
+

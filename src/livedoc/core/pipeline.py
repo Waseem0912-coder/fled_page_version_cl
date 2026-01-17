@@ -151,7 +151,7 @@ class Pipeline:
         """Save the final report.
 
         Args:
-            context: Pipeline context with document.
+            context: Pipeline context with document or final_report.
 
         Returns:
             Path to saved report.
@@ -160,10 +160,18 @@ class Pipeline:
 
         context.output_dir.mkdir(parents=True, exist_ok=True)
 
-        if context.document:
+        # Prefer final_report from FinalizeStage if available
+        if context.final_report:
+            # Save as .txt for the new architecture (not structured markdown)
+            report_path = context.output_dir / "report.txt"
+            report_path.write_text(context.final_report)
+            print(f"  Report: {report_path}")
+            print(f"  Word count: {len(context.final_report.split())}")
+            return report_path
+        elif context.document:
+            # Fallback to old markdown output
             report_content = context.document.to_markdown()
             context.report_path.write_text(report_content)
-
             print(f"  Report: {context.report_path}")
             print(f"  Word count: {context.document.current_word_count()}")
 
@@ -174,7 +182,8 @@ class Pipeline:
         """Create a pipeline with default stages.
 
         Creates a pipeline with the standard stages:
-        Convert -> Extract -> Integrate -> Perspective
+        - New architecture: Convert -> Extract -> Finalize (direct synthesis)
+        - Legacy: Convert -> Extract -> Integrate -> Perspective
 
         Args:
             config: Pipeline configuration.
@@ -184,13 +193,20 @@ class Pipeline:
         """
         from livedoc.stages.convert import ConvertStage
         from livedoc.stages.extract import ExtractStage
-        from livedoc.stages.integrate import IntegrateStage
-        from livedoc.stages.perspective import PerspectiveStage
 
         pipeline = cls(config=config)
         pipeline.add_stage(ConvertStage())
         pipeline.add_stage(ExtractStage())
-        pipeline.add_stage(IntegrateStage())
-        pipeline.add_stage(PerspectiveStage())
+
+        if config.use_finalize_stage:
+            # New architecture: direct synthesis from extractions
+            from livedoc.stages.finalize import FinalizeStage
+            pipeline.add_stage(FinalizeStage())
+        else:
+            # Legacy architecture: integrate -> compress -> perspective
+            from livedoc.stages.integrate import IntegrateStage
+            from livedoc.stages.perspective import PerspectiveStage
+            pipeline.add_stage(IntegrateStage())
+            pipeline.add_stage(PerspectiveStage())
 
         return pipeline

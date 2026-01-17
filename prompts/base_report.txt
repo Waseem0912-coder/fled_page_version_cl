@@ -1,0 +1,14 @@
+Generate a detailed executive report suitable for third-party stakeholders and senior leadership.
+
+TARGET: Approximately 2 pages (~800-1000 words)
+
+REQUIRED SECTIONS:
+1. Executive Summary - High-level overview in 2-3 sentences
+2. Background/Context - What led to this situation
+3. Key Events - Chronological narrative of important occurrences
+4. Impact Analysis - Who/what was affected and to what extent
+5. Root Cause - Technical or procedural factors that contributed
+6. Current Status - Where things stand now
+7. Recommended Actions - Clear next steps with ownership if known
+
+TONE: Professional, factual, suitable for board-level or external review
