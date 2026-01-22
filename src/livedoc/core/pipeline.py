@@ -9,6 +9,7 @@ from livedoc.core.document import LiveDocument
 from livedoc.config.settings import PipelineConfig
 from livedoc.llm.client import LLMClient
 from livedoc.llm.ollama import OllamaClient
+from livedoc.llm.vllm import VLLMClient
 from livedoc.utils.checkpoint import CheckpointManager
 from livedoc.utils.parsing import parse_format_spec
 
@@ -60,7 +61,7 @@ class Pipeline:
 
         # Create text client (for text processing tasks)
         text_model = config.get_text_model()
-        self.llm_client = llm_client or OllamaClient(model=text_model)
+        self.llm_client = llm_client or self._create_client(config, text_model)
 
         # Create vision client (for extraction tasks)
         vision_model = config.get_vision_model()
@@ -71,11 +72,34 @@ class Pipeline:
             self.vision_client = self.llm_client
         else:
             # Create separate client for vision tasks
-            self.vision_client = OllamaClient(model=vision_model)
+            self.vision_client = self._create_client(config, vision_model)
 
         # Log model configuration
+        print(f"Using backend: {config.backend}")
+        if config.backend == "vllm":
+            print(f"  API URL: {config.api_base_url}")
         if vision_model != text_model:
             print(f"Using dual models: vision={vision_model}, text={text_model}")
+
+    def _create_client(self, config: PipelineConfig, model: str) -> LLMClient:
+        """Create an LLM client based on the configured backend.
+
+        Args:
+            config: Pipeline configuration.
+            model: Model name to use.
+
+        Returns:
+            Configured LLM client instance.
+        """
+        if config.backend == "vllm":
+            return VLLMClient(
+                model=model,
+                base_url=config.api_base_url,
+                api_key=config.api_key,
+            )
+        else:
+            # Default to Ollama
+            return OllamaClient(model=model)
 
     def add_stage(self, stage: PipelineStage) -> "Pipeline":
         """Add a stage to the pipeline.

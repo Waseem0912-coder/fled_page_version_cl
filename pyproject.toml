@@ -25,6 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "ollama",
+    "openai",
     "pdf2image",
     "Pillow",
     "PyYAML",

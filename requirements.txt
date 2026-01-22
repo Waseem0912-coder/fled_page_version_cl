@@ -1,4 +1,5 @@
 ollama
+openai
 pdf2image
 Pillow
 PyYAML

@@ -83,21 +83,43 @@ Examples:
         "--model",
         type=str,
         default="ministral-3-14b",
-        help="Ollama model to use (default: ministral-3-14b)"
+        help="LLM model to use (default: ministral-3-14b)"
     )
 
     parser.add_argument(
         "--vision-model",
         type=str,
         default=None,
-        help="Ollama model for vision/extraction tasks (default: same as --model)"
+        help="LLM model for vision/extraction tasks (default: same as --model)"
     )
 
     parser.add_argument(
         "--text-model",
         type=str,
         default=None,
-        help="Ollama model for text processing tasks (default: same as --model)"
+        help="LLM model for text processing tasks (default: same as --model)"
+    )
+
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["ollama", "vllm"],
+        default="ollama",
+        help="LLM backend to use (default: ollama)"
+    )
+
+    parser.add_argument(
+        "--api-base-url",
+        type=str,
+        default="http://localhost:8000/v1",
+        help="Base URL for vLLM/OpenAI-compatible API (default: http://localhost:8000/v1)"
+    )
+
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default="not-needed",
+        help="API key for vLLM/OpenAI-compatible API (default: not-needed)"
     )
 
     parser.add_argument(
@@ -180,6 +202,9 @@ Examples:
         model=args.model,
         vision_model=args.vision_model,
         text_model=args.text_model,
+        backend=args.backend,
+        api_base_url=args.api_base_url,
+        api_key=args.api_key,
         dpi=args.dpi,
         debug=args.debug,
         resume=args.resume,

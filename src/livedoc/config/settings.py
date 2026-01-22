@@ -114,6 +114,9 @@ class PipelineConfig:
         model: LLM model name (e.g., "ministral-3-14b"). Used as default for both vision and text.
         vision_model: LLM model for vision/extraction tasks. If None, uses 'model'.
         text_model: LLM model for text processing tasks. If None, uses 'model'.
+        backend: LLM backend to use ("ollama" or "vllm").
+        api_base_url: Base URL for vLLM/OpenAI-compatible API.
+        api_key: API key for vLLM/OpenAI-compatible API.
         dpi: Image conversion DPI quality.
         debug: Whether to save debug artifacts.
         resume: Whether to resume from checkpoint.
@@ -128,6 +131,9 @@ class PipelineConfig:
     model: str = "ministral-3-14b"
     vision_model: Optional[str] = None  # If None, uses 'model'
     text_model: Optional[str] = None    # If None, uses 'model'
+    backend: str = "ollama"  # "ollama" or "vllm"
+    api_base_url: str = "http://localhost:8000/v1"  # For vLLM backend
+    api_key: str = "not-needed"  # For vLLM backend (local servers don't need auth)
     dpi: int = 150
     debug: bool = False
     resume: bool = False
