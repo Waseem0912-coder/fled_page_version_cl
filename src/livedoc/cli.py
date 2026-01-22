@@ -105,7 +105,23 @@ Examples:
         type=str,
         choices=["ollama", "vllm"],
         default="ollama",
-        help="LLM backend to use (default: ollama)"
+        help="Default LLM backend to use (default: ollama)"
+    )
+
+    parser.add_argument(
+        "--vision-backend",
+        type=str,
+        choices=["ollama", "vllm"],
+        default=None,
+        help="LLM backend for vision/extraction tasks (default: same as --backend)"
+    )
+
+    parser.add_argument(
+        "--text-backend",
+        type=str,
+        choices=["ollama", "vllm"],
+        default=None,
+        help="LLM backend for text processing tasks (default: same as --backend)"
     )
 
     parser.add_argument(
@@ -203,6 +219,8 @@ Examples:
         vision_model=args.vision_model,
         text_model=args.text_model,
         backend=args.backend,
+        vision_backend=args.vision_backend,
+        text_backend=args.text_backend,
         api_base_url=args.api_base_url,
         api_key=args.api_key,
         dpi=args.dpi,

@@ -114,7 +114,9 @@ class PipelineConfig:
         model: LLM model name (e.g., "ministral-3-14b"). Used as default for both vision and text.
         vision_model: LLM model for vision/extraction tasks. If None, uses 'model'.
         text_model: LLM model for text processing tasks. If None, uses 'model'.
-        backend: LLM backend to use ("ollama" or "vllm").
+        backend: Default LLM backend to use ("ollama" or "vllm").
+        vision_backend: LLM backend for vision tasks. If None, uses 'backend'.
+        text_backend: LLM backend for text tasks. If None, uses 'backend'.
         api_base_url: Base URL for vLLM/OpenAI-compatible API.
         api_key: API key for vLLM/OpenAI-compatible API.
         dpi: Image conversion DPI quality.
@@ -131,7 +133,9 @@ class PipelineConfig:
     model: str = "ministral-3-14b"
     vision_model: Optional[str] = None  # If None, uses 'model'
     text_model: Optional[str] = None    # If None, uses 'model'
-    backend: str = "ollama"  # "ollama" or "vllm"
+    backend: str = "ollama"  # "ollama" or "vllm" - default for both
+    vision_backend: Optional[str] = None  # Override backend for vision tasks
+    text_backend: Optional[str] = None    # Override backend for text tasks
     api_base_url: str = "http://localhost:8000/v1"  # For vLLM backend
     api_key: str = "not-needed"  # For vLLM backend (local servers don't need auth)
     dpi: int = 150
@@ -174,3 +178,19 @@ class PipelineConfig:
             Text model name, falling back to default model if not specified.
         """
         return self.text_model or self.model
+
+    def get_vision_backend(self) -> str:
+        """Get the backend to use for vision/extraction tasks.
+
+        Returns:
+            Vision backend name, falling back to default backend if not specified.
+        """
+        return self.vision_backend or self.backend
+
+    def get_text_backend(self) -> str:
+        """Get the backend to use for text processing tasks.
+
+        Returns:
+            Text backend name, falling back to default backend if not specified.
+        """
+        return self.text_backend or self.backend

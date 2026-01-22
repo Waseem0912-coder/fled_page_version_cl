@@ -1,6 +1,6 @@
 # LiveDoc Report Generator
 
-A flexible, vision-based PDF processing pipeline for generating structured reports from large document collections using local LLMs via Ollama.
+A flexible, vision-based PDF processing pipeline for generating structured reports from large document collections using local LLMs via Ollama or vLLM.
 
 ---
 
@@ -19,8 +19,9 @@ This system processes multiple PDFs (issue trackers, email dumps, chat logs, int
 - **Smart compression**: Preserves critical items (importance 3) while compressing lower-priority content
 - **Perspective rewriting**: Generate reports from different team member viewpoints
 - **Dual model support**: Use different models for vision (extraction) and text (synthesis) tasks
+- **Flexible backends**: Supports Ollama and vLLM (OpenAI-compatible API), with mixed backend configurations
 - **Robust date/event preservation**: Semantic deduplication and year inference ensure no dates or events are lost
-- **Local-first**: Runs entirely on local hardware via Ollama
+- **Local-first**: Runs entirely on local hardware via Ollama or vLLM
 
 ### Hardware Requirements
 
@@ -1161,11 +1162,23 @@ def main():
 
     # Model configuration
     parser.add_argument("--model", type=str, default="ministral-3-14b",
-                        help="Default Ollama model for all tasks")
+                        help="Default LLM model for all tasks")
     parser.add_argument("--vision-model", type=str, default=None,
-                        help="Ollama model for vision/extraction tasks (default: same as --model)")
+                        help="LLM model for vision/extraction tasks (default: same as --model)")
     parser.add_argument("--text-model", type=str, default=None,
-                        help="Ollama model for text processing tasks (default: same as --model)")
+                        help="LLM model for text processing tasks (default: same as --model)")
+
+    # Backend configuration
+    parser.add_argument("--backend", type=str, choices=["ollama", "vllm"], default="ollama",
+                        help="Default LLM backend (default: ollama)")
+    parser.add_argument("--vision-backend", type=str, choices=["ollama", "vllm"], default=None,
+                        help="Backend for vision tasks (default: same as --backend)")
+    parser.add_argument("--text-backend", type=str, choices=["ollama", "vllm"], default=None,
+                        help="Backend for text tasks (default: same as --backend)")
+    parser.add_argument("--api-base-url", type=str, default="http://localhost:8000/v1",
+                        help="Base URL for vLLM/OpenAI-compatible API")
+    parser.add_argument("--api-key", type=str, default="not-needed",
+                        help="API key for vLLM (default: not-needed)")
 
     parser.add_argument("--dpi", type=int, default=150,
                         help="Image conversion DPI")
@@ -1176,13 +1189,18 @@ def main():
 
     args = parser.parse_args()
 
-    # Create configuration with model settings
+    # Create configuration with model and backend settings
     config = PipelineConfig(
         format_spec_path=args.format,
         max_words=args.max_words,
         model=args.model,
         vision_model=args.vision_model,
         text_model=args.text_model,
+        backend=args.backend,
+        vision_backend=args.vision_backend,
+        text_backend=args.text_backend,
+        api_base_url=args.api_base_url,
+        api_key=args.api_key,
         dpi=args.dpi,
         debug=args.debug,
         use_finalize_stage=not args.legacy,
@@ -1221,6 +1239,18 @@ python -m livedoc ./documents --format ./format.md \
 python -m livedoc ./documents \
   --vision-model llama3.2-vision:11b \
   --text-model mistral
+
+# Use vLLM backend
+python -m livedoc ./documents \
+  --backend vllm \
+  --model meta-llama/Llama-3.2-11B-Vision-Instruct \
+  --api-base-url http://localhost:8000/v1
+
+# Mixed backends: Ollama for vision, vLLM for text
+python -m livedoc ./documents \
+  --vision-backend ollama --vision-model llava:13b \
+  --text-backend vllm --text-model meta-llama/Llama-3.1-8B \
+  --api-base-url http://localhost:8000/v1
 
 # With debug output (saves extraction JSONs)
 python -m livedoc ./documents --format ./format.md --debug
@@ -1282,6 +1312,18 @@ python -m livedoc ./documents --format ./format.md --legacy
 5. **Verify Ollama is running**:
    ```bash
    ollama list  # Should show your downloaded models
+   ```
+
+6. **(Optional) Set up vLLM** for higher throughput:
+   ```bash
+   # Install vLLM
+   pip install vllm
+
+   # Start vLLM server with OpenAI-compatible API
+   vllm serve meta-llama/Llama-3.1-8B --port 8000
+
+   # For vision models
+   vllm serve meta-llama/Llama-3.2-11B-Vision-Instruct --port 8000
    ```
 
 ### Directory Setup
@@ -1411,6 +1453,68 @@ python -m livedoc ./documents \
 ```
 
 If only `--model` is specified, both clients use the same model (backward compatible).
+
+### Backend Configuration (Ollama vs vLLM)
+
+Switch between Ollama and vLLM backends:
+
+```bash
+# Use vLLM backend (default port 8000)
+python -m livedoc ./documents \
+  --backend vllm \
+  --model meta-llama/Llama-3.2-11B-Vision-Instruct \
+  --api-base-url http://localhost:8000/v1
+
+# Use Ollama (default)
+python -m livedoc ./documents --backend ollama --model ministral-3-14b
+```
+
+**Backend CLI Arguments:**
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--backend` | Default backend for all tasks | `ollama` |
+| `--vision-backend` | Backend for vision tasks (overrides --backend) | Same as --backend |
+| `--text-backend` | Backend for text tasks (overrides --backend) | Same as --backend |
+| `--api-base-url` | Base URL for vLLM/OpenAI-compatible API | `http://localhost:8000/v1` |
+| `--api-key` | API key for vLLM (use "not-needed" for local) | `not-needed` |
+
+### Mixed Backend Configuration
+
+Use different backends for vision and text tasks (e.g., Ollama for vision, vLLM for text):
+
+```bash
+# Vision on Ollama (better vision model support), text on vLLM (faster inference)
+python -m livedoc ./documents \
+  --vision-backend ollama --vision-model llava:13b \
+  --text-backend vllm --text-model meta-llama/Llama-3.1-8B \
+  --api-base-url http://localhost:8000/v1
+
+# Or set a default and override one
+python -m livedoc ./documents \
+  --backend ollama \
+  --text-backend vllm --text-model llama-3.1-8b \
+  --api-base-url http://localhost:8000/v1
+```
+
+**When to use mixed backends:**
+- Ollama has better support for certain vision models (llava, llama-vision)
+- vLLM provides higher throughput for text-only tasks
+- Different hardware optimizations (e.g., vLLM on GPU cluster, Ollama on local machine)
+
+**Architecture with Mixed Backends:**
+```
+                    ┌─────────────────────────────────────┐
+  --vision-backend ▶│ ExtractStage (vision_client)        │
+  --vision-model   ▶│ - Ollama or vLLM                    │
+                    │ - PDF page image analysis           │
+                    └─────────────────────────────────────┘
+
+                    ┌─────────────────────────────────────┐
+  --text-backend ──▶│ Text Stages (llm_client)            │
+  --text-model ────▶│ - Ollama or vLLM                    │
+                    │ - Synthesis, compression, rewriting │
+                    └─────────────────────────────────────┘
+```
 
 ### Debug Mode (Saves Extraction JSONs)
 
@@ -1596,7 +1700,8 @@ livedoc/
 │       │   └── perspective.py # Perspective rewriting
 │       ├── llm/
 │       │   ├── client.py    # LLM client interface
-│       │   └── ollama.py    # Ollama implementation
+│       │   ├── ollama.py    # Ollama implementation
+│       │   └── vllm.py      # vLLM/OpenAI-compatible implementation
 │       └── utils/
 │           ├── checkpoint.py # Checkpoint/resume support
 │           ├── date_event.py # Date normalization and event deduplication

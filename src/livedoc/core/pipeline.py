@@ -61,37 +61,45 @@ class Pipeline:
 
         # Create text client (for text processing tasks)
         text_model = config.get_text_model()
-        self.llm_client = llm_client or self._create_client(config, text_model)
+        text_backend = config.get_text_backend()
+        self.llm_client = llm_client or self._create_client(config, text_model, text_backend)
 
         # Create vision client (for extraction tasks)
         vision_model = config.get_vision_model()
+        vision_backend = config.get_vision_backend()
         if vision_client:
             self.vision_client = vision_client
-        elif vision_model == text_model:
-            # Share the same client if models are the same
+        elif vision_model == text_model and vision_backend == text_backend:
+            # Share the same client if models and backends are the same
             self.vision_client = self.llm_client
         else:
             # Create separate client for vision tasks
-            self.vision_client = self._create_client(config, vision_model)
+            self.vision_client = self._create_client(config, vision_model, vision_backend)
 
         # Log model configuration
-        print(f"Using backend: {config.backend}")
-        if config.backend == "vllm":
-            print(f"  API URL: {config.api_base_url}")
+        if vision_backend == text_backend:
+            print(f"Using backend: {text_backend}")
+            if text_backend == "vllm":
+                print(f"  API URL: {config.api_base_url}")
+        else:
+            print(f"Using mixed backends: vision={vision_backend}, text={text_backend}")
+            if "vllm" in (vision_backend, text_backend):
+                print(f"  vLLM API URL: {config.api_base_url}")
         if vision_model != text_model:
             print(f"Using dual models: vision={vision_model}, text={text_model}")
 
-    def _create_client(self, config: PipelineConfig, model: str) -> LLMClient:
-        """Create an LLM client based on the configured backend.
+    def _create_client(self, config: PipelineConfig, model: str, backend: str) -> LLMClient:
+        """Create an LLM client based on the specified backend.
 
         Args:
             config: Pipeline configuration.
             model: Model name to use.
+            backend: Backend to use ("ollama" or "vllm").
 
         Returns:
             Configured LLM client instance.
         """
-        if config.backend == "vllm":
+        if backend == "vllm":
             return VLLMClient(
                 model=model,
                 base_url=config.api_base_url,
