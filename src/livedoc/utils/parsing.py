@@ -2,13 +2,15 @@
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from livedoc.core.document import Decision
 from livedoc.utils.date_event import sort_events_by_importance
 
+if TYPE_CHECKING:
+    from livedoc.core.document import Decision
 
-def parse_decision(response: str) -> Optional[Decision]:
+
+def parse_decision(response: str) -> Optional["Decision"]:
     """Parse plain-text decision using regex.
 
     Expected format: "action: ADD, topic: server outage, section: Timeline"
@@ -20,6 +22,9 @@ def parse_decision(response: str) -> Optional[Decision]:
     Returns:
         Decision object or None if parsing failed.
     """
+    # Import here to avoid circular import
+    from livedoc.core.document import Decision
+
     # Clean up markdown formatting from LLM response
     # Remove bold markers (**), quotes, and other common formatting
     cleaned = response
